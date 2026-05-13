@@ -12,7 +12,10 @@ import com.dhwani.app.audio.SpeechToText
 import com.dhwani.app.audio.TextToSpeechEngine
 import com.dhwani.app.audio.VoskModelManager
 import com.dhwani.app.call.CallService
+import com.dhwani.app.data.UserContext
+import com.dhwani.app.data.UserContextStore
 import com.dhwani.app.llm.GemmaEngine
+import com.dhwani.app.llm.Phase2Assistant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,11 +31,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val recorder = SpeakerphoneRecorder()
     private val tts = TextToSpeechEngine(appContext)
+    private val contextStore = UserContextStore(appContext)
     private var stt: SpeechToText? = null
     private var transcriptJob: Job? = null
     private var startJob: Job? = null
+    private var suggestionJob: Job? = null
+    private var briefingJob: Job? = null
 
-    private val _state = MutableStateFlow(CallState(modelStatus = GemmaEngine.status))
+    private val _state = MutableStateFlow(
+        CallState(
+            modelStatus = GemmaEngine.status,
+            userContext = contextStore.load(),
+        ),
+    )
     val state: StateFlow<CallState> = _state.asStateFlow()
 
     fun startCallPipe() {
@@ -73,6 +84,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                                 ),
                             )
                         }
+                        if (transcript.isFinal) {
+                            requestSmartReplies(transcript.text)
+                        }
                     }
                 }
             }
@@ -84,6 +98,8 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         transcriptJob = null
         startJob?.cancel()
         startJob = null
+        suggestionJob?.cancel()
+        suggestionJob = null
         recorder.stop()
         stt?.close()
         stt = null
@@ -105,16 +121,71 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun speakSuggestion(suggestion: String) {
+        viewModelScope.launch {
+            routeAudioForCall()
+            tts.speak(suggestion, detectLanguage(suggestion))
+        }
+    }
+
+    fun useSuggestion(suggestion: String) {
+        _state.update { it.copy(draftReply = suggestion) }
+    }
+
+    fun toggleContextEditor() {
+        _state.update { it.copy(isContextEditorOpen = !it.isContextEditorOpen) }
+    }
+
+    fun onContextChange(userContext: UserContext) {
+        _state.update { it.copy(userContext = userContext) }
+    }
+
+    fun saveContext() {
+        val userContext = _state.value.userContext
+        contextStore.save(userContext)
+        _state.update {
+            it.copy(
+                userContext = userContext,
+                contextMessage = if (userContext.isConfigured) "Context saved" else "Add your name to finish setup",
+            )
+        }
+    }
+
+    fun onCallGoalChange(value: String) {
+        _state.update { it.copy(callGoal = value) }
+    }
+
+    fun generateBriefing() {
+        val goal = _state.value.callGoal.trim()
+        if (goal.isBlank()) {
+            _state.update { it.copy(briefing = "Type a call goal first.") }
+            return
+        }
+
+        briefingJob?.cancel()
+        briefingJob = viewModelScope.launch {
+            _state.update { it.copy(isBriefingLoading = true, briefing = "Preparing briefing...") }
+            runCatching {
+                ensureGemmaReady()
+                GemmaEngine.generate(Phase2Assistant.briefingPrompt(_state.value.userContext, goal))
+            }.onSuccess { briefing ->
+                _state.update { it.copy(isBriefingLoading = false, briefing = briefing.trim()) }
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        isBriefingLoading = false,
+                        briefing = "Briefing unavailable: ${error.message}",
+                    )
+                }
+            }
+        }
+    }
+
     fun testGemma() {
         viewModelScope.launch {
             _state.update { it.copy(modelStatus = "Loading Gemma...") }
             runCatching {
-                withContext(Dispatchers.Default) {
-                    GemmaEngine.init(appContext)
-                }
-                if (!GemmaEngine.isReady) {
-                    error(GemmaEngine.status)
-                }
+                ensureGemmaReady()
                 _state.update { it.copy(modelStatus = "Gemma test running...") }
                 GemmaEngine.generate("Translate to Hindi: I am running late.")
             }.onSuccess { response ->
@@ -129,6 +200,45 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         stopCallPipe()
         tts.close()
         super.onCleared()
+    }
+
+    private fun requestSmartReplies(latestUtterance: String) {
+        suggestionJob?.cancel()
+        suggestionJob = viewModelScope.launch {
+            _state.update { it.copy(isSuggesting = true) }
+            runCatching {
+                ensureGemmaReady()
+                val current = _state.value
+                val rollingTranscript = current.transcript
+                    .takeLast(8)
+                    .joinToString("\n") { if (it.isFinal) "Caller: ${it.text}" else "Caller partial: ${it.text}" }
+                val prompt = Phase2Assistant.smartReplyPrompt(
+                    context = current.userContext,
+                    rollingTranscript = rollingTranscript,
+                    latestUtterance = latestUtterance,
+                )
+                Phase2Assistant.parseSuggestions(GemmaEngine.generate(prompt))
+            }.onSuccess { suggestions ->
+                _state.update { it.copy(isSuggesting = false, suggestions = suggestions) }
+            }.onFailure {
+                _state.update {
+                    it.copy(
+                        isSuggesting = false,
+                        suggestions = Phase2Assistant.fallbackSuggestions(),
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun ensureGemmaReady() {
+        withContext(Dispatchers.Default) {
+            GemmaEngine.init(appContext)
+        }
+        if (!GemmaEngine.isReady) {
+            error(GemmaEngine.status)
+        }
+        _state.update { it.copy(modelStatus = GemmaEngine.status) }
     }
 
     private fun routeAudioForCall() {
@@ -160,6 +270,14 @@ data class CallState(
     val draftReply: String = "",
     val transcript: List<CaptionLine> = emptyList(),
     val modelStatus: String = "Gemma not loaded",
+    val userContext: UserContext = UserContext(),
+    val isContextEditorOpen: Boolean = false,
+    val contextMessage: String = "",
+    val suggestions: List<String> = emptyList(),
+    val isSuggesting: Boolean = false,
+    val callGoal: String = "",
+    val briefing: String = "",
+    val isBriefingLoading: Boolean = false,
 )
 
 data class CaptionLine(

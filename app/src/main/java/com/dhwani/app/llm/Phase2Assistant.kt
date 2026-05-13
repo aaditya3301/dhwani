@@ -7,44 +7,64 @@ object Phase2Assistant {
         context: UserContext,
         rollingTranscript: String,
         latestUtterance: String,
+        recentSummaries: String,
     ): String = """
-        You are Dhwani, a phone-call assistant for a deaf user.
+        You write tap-to-speak replies for a deaf user in a live phone call.
 
-        Personal context:
-        ${context.forPrompt()}
+        User:
+        ${compactContext(context)}
 
-        Conversation so far:
-        ${rollingTranscript.ifBlank { "No prior transcript." }}
+        Recent saved call notes:
+        ${recentSummaries.ifBlank { "None" }}
 
-        Latest caller utterance:
+        Recent call:
+        ${rollingTranscript.ifBlank { "None" }}
+
+        Caller just said:
         "$latestUtterance"
 
-        Generate exactly 3 short natural replies the user could say.
-        Each reply must be 12 words or fewer.
-        Match the caller's language when obvious. Use Devanagari for Hindi.
+        Write exactly 3 replies the user can say now.
+        Rules:
+        - Reply directly to the caller's latest message.
+        - Keep each reply under 10 words.
+        - Sound natural, not robotic.
+        - Do not explain.
+        - Do not mention captions, AI, or deafness.
+        - If the caller asks a question, answer or ask for clarification.
+        - If Hindi is used, write Hindi in Devanagari.
 
         Output only:
-        1. first reply
-        2. second reply
-        3. third reply
+        1. ...
+        2. ...
+        3. ...
     """.trimIndent()
 
-    fun briefingPrompt(context: UserContext, goal: String): String = """
-        You are Dhwani, preparing a deaf user for an outgoing phone call.
+    fun briefingPrompt(context: UserContext, goal: String, recentSummaries: String): String = """
+        Prepare a short outgoing-call briefing.
 
-        Personal context:
-        ${context.forPrompt()}
+        User:
+        ${compactContext(context)}
 
-        Call goal:
+        Recent saved call notes:
+        ${recentSummaries.ifBlank { "None" }}
+
+        Goal:
         "$goal"
 
-        Generate a concise call briefing with:
-        Opening line:
-        Likely questions:
-        Recommended responses:
-        Information to keep ready:
+        Return only this format, concise:
+        Opening: one sentence.
+        Expect: 3 likely caller questions.
+        Say: 3 short responses.
+        Ready: key details to keep nearby.
+    """.trimIndent()
 
-        Keep it practical and short.
+    fun summaryPrompt(transcript: String): String = """
+        Summarize this phone call transcript in 2 short lines.
+        Include concrete outcomes, times, names, or follow-ups if present.
+        If the transcript is unclear, say what was discussed.
+
+        Transcript:
+        $transcript
     """.trimIndent()
 
     fun parseSuggestions(output: String): List<String> {
@@ -66,4 +86,23 @@ object Phase2Assistant {
         "Can you repeat that?",
         "I will get back to you soon.",
     )
+
+    private fun compactContext(context: UserContext): String {
+        return buildList {
+            add("Name=${context.name.ifBlank { "unknown" }}")
+            add("Language=${context.preferredLanguage}")
+            if (context.voiceFriendlyAddress.isNotBlank()) {
+                add("Address=${context.voiceFriendlyAddress}")
+            }
+            if (context.importantPeople.isNotBlank()) {
+                add("People=${context.importantPeople}")
+            }
+            if (context.medicalNotes.isNotBlank()) {
+                add("Medical=${context.medicalNotes}")
+            }
+            if (context.paymentHint.isNotBlank()) {
+                add("Payment=${context.paymentHint}")
+            }
+        }.joinToString("; ")
+    }
 }

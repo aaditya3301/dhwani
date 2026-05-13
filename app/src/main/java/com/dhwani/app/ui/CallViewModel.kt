@@ -12,6 +12,7 @@ import com.dhwani.app.audio.SpeechToText
 import com.dhwani.app.audio.TextToSpeechEngine
 import com.dhwani.app.audio.VoskModelManager
 import com.dhwani.app.call.CallService
+import com.dhwani.app.data.CallLogStore
 import com.dhwani.app.data.UserContext
 import com.dhwani.app.data.UserContextStore
 import com.dhwani.app.llm.GemmaEngine
@@ -32,16 +33,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private val recorder = SpeakerphoneRecorder()
     private val tts = TextToSpeechEngine(appContext)
     private val contextStore = UserContextStore(appContext)
+    private val callLogStore = CallLogStore(appContext)
     private var stt: SpeechToText? = null
     private var transcriptJob: Job? = null
     private var startJob: Job? = null
     private var suggestionJob: Job? = null
     private var briefingJob: Job? = null
+    private var summaryJob: Job? = null
 
     private val _state = MutableStateFlow(
         CallState(
             modelStatus = GemmaEngine.status,
             userContext = contextStore.load(),
+            recentSummaries = formatRecentSummaries(),
         ),
     )
     val state: StateFlow<CallState> = _state.asStateFlow()
@@ -81,6 +85,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                                 transcript = it.transcript + CaptionLine(
                                     text = transcript.text,
                                     isFinal = transcript.isFinal,
+                                    speaker = Speaker.Caller,
                                 ),
                             )
                         }
@@ -94,6 +99,11 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopCallPipe() {
+        val transcriptToSummarize = _state.value.transcript
+            .filter { it.isFinal || it.speaker == Speaker.User }
+            .takeLast(30)
+            .joinToString("\n") { "${it.speaker.label}: ${it.text}" }
+
         transcriptJob?.cancel()
         transcriptJob = null
         startJob?.cancel()
@@ -104,7 +114,20 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         stt?.close()
         stt = null
         appContext.stopService(Intent(appContext, CallService::class.java))
-        _state.update { it.copy(isRunning = false, liveCaption = "Ready") }
+        _state.update {
+            it.copy(
+                isRunning = false,
+                liveCaption = "Ready",
+                draftReply = "",
+                transcript = emptyList(),
+                suggestions = emptyList(),
+                isSuggesting = false,
+            )
+        }
+
+        if (transcriptToSummarize.isNotBlank()) {
+            summarizeStoppedCall(transcriptToSummarize)
+        }
     }
 
     fun onDraftChange(value: String) {
@@ -114,6 +137,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     fun sendReply() {
         val text = _state.value.draftReply.trim()
         if (text.isBlank()) return
+        appendUserLine(text)
         _state.update { it.copy(draftReply = "") }
         viewModelScope.launch {
             routeAudioForCall()
@@ -122,6 +146,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun speakSuggestion(suggestion: String) {
+        appendUserLine(suggestion)
         viewModelScope.launch {
             routeAudioForCall()
             tts.speak(suggestion, detectLanguage(suggestion))
@@ -134,6 +159,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleContextEditor() {
         _state.update { it.copy(isContextEditorOpen = !it.isContextEditorOpen) }
+    }
+
+    fun toggleBriefingPanel() {
+        _state.update { it.copy(isBriefingPanelOpen = !it.isBriefingPanelOpen) }
+    }
+
+    fun refreshSmartReplies() {
+        val latest = _state.value.transcript.lastOrNull {
+            it.isFinal && it.speaker == Speaker.Caller
+        }?.text
+            ?: _state.value.liveCaption.takeIf { it != "Ready" }
+            ?: return
+        requestSmartReplies(latest)
     }
 
     fun onContextChange(userContext: UserContext) {
@@ -167,7 +205,13 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(isBriefingLoading = true, briefing = "Preparing briefing...") }
             runCatching {
                 ensureGemmaReady()
-                GemmaEngine.generate(Phase2Assistant.briefingPrompt(_state.value.userContext, goal))
+                GemmaEngine.generate(
+                    Phase2Assistant.briefingPrompt(
+                        context = _state.value.userContext,
+                        goal = goal,
+                        recentSummaries = _state.value.recentSummaries,
+                    ),
+                )
             }.onSuccess { briefing ->
                 _state.update { it.copy(isBriefingLoading = false, briefing = briefing.trim()) }
             }.onFailure { error ->
@@ -211,11 +255,15 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 val current = _state.value
                 val rollingTranscript = current.transcript
                     .takeLast(8)
-                    .joinToString("\n") { if (it.isFinal) "Caller: ${it.text}" else "Caller partial: ${it.text}" }
+                    .joinToString("\n") { line ->
+                        val suffix = if (line.isFinal || line.speaker == Speaker.User) "" else " partial"
+                        "${line.speaker.label}$suffix: ${line.text}"
+                    }
                 val prompt = Phase2Assistant.smartReplyPrompt(
                     context = current.userContext,
                     rollingTranscript = rollingTranscript,
                     latestUtterance = latestUtterance,
+                    recentSummaries = current.recentSummaries,
                 )
                 Phase2Assistant.parseSuggestions(GemmaEngine.generate(prompt))
             }.onSuccess { suggestions ->
@@ -227,6 +275,39 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                         suggestions = Phase2Assistant.fallbackSuggestions(),
                     )
                 }
+            }
+        }
+    }
+
+    private fun appendUserLine(text: String) {
+        _state.update {
+            it.copy(
+                transcript = it.transcript + CaptionLine(
+                    text = text,
+                    isFinal = true,
+                    speaker = Speaker.User,
+                ),
+            )
+        }
+    }
+
+    private fun summarizeStoppedCall(transcript: String) {
+        summaryJob?.cancel()
+        summaryJob = viewModelScope.launch {
+            _state.update { it.copy(summaryStatus = "Summarizing call...") }
+            runCatching {
+                ensureGemmaReady()
+                GemmaEngine.generate(Phase2Assistant.summaryPrompt(transcript))
+            }.onSuccess { summary ->
+                callLogStore.add(summary)
+                _state.update {
+                    it.copy(
+                        summaryStatus = "Call summary saved",
+                        recentSummaries = formatRecentSummaries(),
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(summaryStatus = "Summary unavailable: ${error.message}") }
             }
         }
     }
@@ -262,6 +343,11 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private fun detectLanguage(text: String): String {
         return if (text.any { it in '\u0900'..'\u097F' }) "hi-IN" else "en-IN"
     }
+
+    private fun formatRecentSummaries(): String {
+        return callLogStore.loadRecent()
+            .joinToString("\n") { "- ${it.summary}" }
+    }
 }
 
 data class CallState(
@@ -277,11 +363,20 @@ data class CallState(
     val isSuggesting: Boolean = false,
     val callGoal: String = "",
     val briefing: String = "",
+    val isBriefingPanelOpen: Boolean = true,
     val isBriefingLoading: Boolean = false,
+    val recentSummaries: String = "",
+    val summaryStatus: String = "",
 )
 
 data class CaptionLine(
     val text: String,
     val isFinal: Boolean,
+    val speaker: Speaker,
     val id: Long = System.nanoTime(),
 )
+
+enum class Speaker(val label: String) {
+    Caller("Caller"),
+    User("You"),
+}

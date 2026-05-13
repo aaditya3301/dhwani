@@ -108,8 +108,11 @@ fun CallScreen(vm: CallViewModel = viewModel()) {
                 goal = state.callGoal,
                 briefing = state.briefing,
                 isLoading = state.isBriefingLoading,
+                isOpen = state.isBriefingPanelOpen,
+                recentSummaries = state.recentSummaries,
                 onGoalChange = vm::onCallGoalChange,
                 onGenerate = vm::generateBriefing,
+                onToggle = vm::toggleBriefingPanel,
             )
 
             Spacer(Modifier.height(12.dp))
@@ -134,29 +137,45 @@ fun CallScreen(vm: CallViewModel = viewModel()) {
                 reverseLayout = true,
             ) {
                 items(state.transcript.asReversed(), key = { it.id }) { line ->
-                    Text(
-                        text = if (line.isFinal) line.text else "${line.text}...",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Column {
+                        Text(
+                            text = line.speaker.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = if (line.isFinal) line.text else "${line.text}...",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
 
-            if (state.suggestions.isNotEmpty() || state.isSuggesting) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (state.isSuggesting) "Thinking..." else "Smart replies",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(
+                    onClick = vm::refreshSmartReplies,
+                    enabled = !state.isSuggesting && state.transcript.any { it.speaker.label == "Caller" },
+                ) {
+                    Text("Refresh")
+                }
+            }
+            if (state.suggestions.isNotEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (state.isSuggesting) {
-                        Text(
-                            text = "Thinking...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.align(Alignment.CenterVertically),
-                        )
-                    }
                     state.suggestions.forEach { suggestion ->
                         SuggestionChip(
                             onClick = { vm.speakSuggestion(suggestion) },
@@ -183,6 +202,14 @@ fun CallScreen(vm: CallViewModel = viewModel()) {
             }
 
             Spacer(Modifier.height(8.dp))
+
+            if (state.summaryStatus.isNotBlank()) {
+                Text(
+                    text = state.summaryStatus,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.align(Alignment.End),
+                )
+            }
 
             OutlinedButton(
                 onClick = vm::testGemma,
@@ -235,6 +262,20 @@ private fun ContextSetupCard(
                 label = { Text("Important people") },
                 maxLines = 2,
             )
+            OutlinedTextField(
+                value = context.medicalNotes,
+                onValueChange = { onChange(context.copy(medicalNotes = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Medical notes") },
+                maxLines = 2,
+            )
+            OutlinedTextField(
+                value = context.paymentHint,
+                onValueChange = { onChange(context.copy(paymentHint = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Safe payment hint") },
+                singleLine = true,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = onSave) {
                     Text("Save")
@@ -251,15 +292,42 @@ private fun BriefingCard(
     goal: String,
     briefing: String,
     isLoading: Boolean,
+    isOpen: Boolean,
+    recentSummaries: String,
     onGoalChange: (String) -> Unit,
     onGenerate: () -> Unit,
+    onToggle: () -> Unit,
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Pre-call briefing", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Pre-call briefing",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = onToggle) {
+                    Text(if (isOpen) "Hide" else "Edit")
+                }
+            }
+            if (!isOpen) return@Column
+            if (recentSummaries.isNotBlank()) {
+                Text(
+                    text = "Recent calls",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = recentSummaries,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.heightIn(max = 96.dp),
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = goal,

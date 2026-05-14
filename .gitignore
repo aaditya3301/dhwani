@@ -14,7 +14,7 @@ local.properties
 *.aab
 
 # Local planning docs
-/docs
+docs
 
 # Local model assets
 app/src/main/assets/models/*.task

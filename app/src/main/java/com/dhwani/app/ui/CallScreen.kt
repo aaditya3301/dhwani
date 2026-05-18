@@ -32,7 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dhwani.app.data.CallSummary
 import com.dhwani.app.data.UserContext
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun CallScreen(vm: CallViewModel = viewModel()) {
@@ -113,6 +116,15 @@ fun CallScreen(vm: CallViewModel = viewModel()) {
                 onGoalChange = vm::onCallGoalChange,
                 onGenerate = vm::generateBriefing,
                 onToggle = vm::toggleBriefingPanel,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            CallHistoryCard(
+                summaries = state.recentCallSummaries,
+                isOpen = state.isCallHistoryOpen,
+                onToggle = vm::toggleCallHistory,
+                onClear = vm::clearCallHistory,
             )
 
             Spacer(Modifier.height(12.dp))
@@ -249,6 +261,13 @@ private fun ContextSetupCard(
                 singleLine = true,
             )
             OutlinedTextField(
+                value = context.homeAddress,
+                onValueChange = { onChange(context.copy(homeAddress = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Full home address") },
+                maxLines = 3,
+            )
+            OutlinedTextField(
                 value = context.voiceFriendlyAddress,
                 onValueChange = { onChange(context.copy(voiceFriendlyAddress = it)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -282,6 +301,66 @@ private fun ContextSetupCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(message, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallHistoryCard(
+    summaries: List<CallSummary>,
+    isOpen: Boolean,
+    onToggle: () -> Unit,
+    onClear: () -> Unit,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Call history",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = onToggle) {
+                    Text(if (isOpen) "Hide" else "Show")
+                }
+            }
+
+            if (!isOpen) return@Column
+
+            if (summaries.isEmpty()) {
+                Text("No saved summaries yet.", style = MaterialTheme.typography.bodySmall)
+                return@Column
+            }
+
+            summaries.forEach { item ->
+                Column {
+                    Text(
+                        text = DateFormat.getDateTimeInstance(
+                            DateFormat.SHORT,
+                            DateFormat.SHORT,
+                        ).format(Date(item.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = item.summary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = onClear,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("Clear history")
             }
         }
     }

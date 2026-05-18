@@ -56,6 +56,10 @@ class CallLogStore(context: Context) {
         prefs.edit().putString(KEY_SUMMARIES, array.toString()).apply()
     }
 
+    fun clear() {
+        prefs.edit().remove(KEY_SUMMARIES).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "dhwani_call_log"
         private const val KEY_SUMMARIES = "summaries"

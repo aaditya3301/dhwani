@@ -12,11 +12,13 @@ import com.dhwani.app.audio.SpeechToText
 import com.dhwani.app.audio.TextToSpeechEngine
 import com.dhwani.app.audio.VoskModelManager
 import com.dhwani.app.call.CallService
+import com.dhwani.app.data.CallSummary
 import com.dhwani.app.data.CallLogStore
 import com.dhwani.app.data.UserContext
 import com.dhwani.app.data.UserContextStore
 import com.dhwani.app.llm.GemmaEngine
 import com.dhwani.app.llm.Phase2Assistant
+import com.dhwani.app.llm.Phase2ToolDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,12 +42,15 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private var suggestionJob: Job? = null
     private var briefingJob: Job? = null
     private var summaryJob: Job? = null
+    private var lastSuggestionAtMs: Long = 0
+    private var lastSuggestionUtterance: String = ""
 
     private val _state = MutableStateFlow(
         CallState(
             modelStatus = GemmaEngine.status,
             userContext = contextStore.load(),
             recentSummaries = formatRecentSummaries(),
+            recentCallSummaries = callLogStore.loadRecent(10),
         ),
     )
     val state: StateFlow<CallState> = _state.asStateFlow()
@@ -90,7 +95,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                         if (transcript.isFinal) {
-                            requestSmartReplies(transcript.text)
+                            requestSmartReplies(transcript.text, force = false)
                         }
                     }
                 }
@@ -171,7 +176,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         }?.text
             ?: _state.value.liveCaption.takeIf { it != "Ready" }
             ?: return
-        requestSmartReplies(latest)
+        requestSmartReplies(latest, force = true)
     }
 
     fun onContextChange(userContext: UserContext) {
@@ -205,12 +210,24 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(isBriefingLoading = true, briefing = "Preparing briefing...") }
             runCatching {
                 ensureGemmaReady()
-                GemmaEngine.generate(
-                    Phase2Assistant.briefingPrompt(
-                        context = _state.value.userContext,
-                        goal = goal,
-                        recentSummaries = _state.value.recentSummaries,
-                    ),
+                generateWithLocalTools(
+                    initialPrompt = { dispatcher ->
+                        Phase2Assistant.briefingPrompt(
+                            context = _state.value.userContext,
+                            goal = goal,
+                            recentSummaries = _state.value.recentSummaries,
+                            toolContext = dispatcher.availableContext(),
+                        )
+                    },
+                    promptWithToolResults = { dispatcher, toolResults ->
+                        Phase2Assistant.briefingPrompt(
+                            context = _state.value.userContext,
+                            goal = goal,
+                            recentSummaries = _state.value.recentSummaries,
+                            toolContext = dispatcher.availableContext(),
+                            toolResults = toolResults,
+                        )
+                    },
                 )
             }.onSuccess { briefing ->
                 _state.update { it.copy(isBriefingLoading = false, briefing = briefing.trim()) }
@@ -222,6 +239,21 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+        }
+    }
+
+    fun toggleCallHistory() {
+        _state.update { it.copy(isCallHistoryOpen = !it.isCallHistoryOpen) }
+    }
+
+    fun clearCallHistory() {
+        callLogStore.clear()
+        _state.update {
+            it.copy(
+                recentSummaries = "",
+                recentCallSummaries = emptyList(),
+                summaryStatus = "Call history cleared",
+            )
         }
     }
 
@@ -246,7 +278,19 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 
-    private fun requestSmartReplies(latestUtterance: String) {
+    private fun requestSmartReplies(latestUtterance: String, force: Boolean) {
+        val cleanUtterance = latestUtterance.trim()
+        if (cleanUtterance.isBlank()) return
+
+        val now = System.currentTimeMillis()
+        if (!force) {
+            val isDuplicate = cleanUtterance.equals(lastSuggestionUtterance, ignoreCase = true)
+            val isCoolingDown = now - lastSuggestionAtMs < SMART_REPLY_COOLDOWN_MS
+            if (isDuplicate || isCoolingDown || suggestionJob?.isActive == true) return
+        }
+
+        lastSuggestionAtMs = now
+        lastSuggestionUtterance = cleanUtterance
         suggestionJob?.cancel()
         suggestionJob = viewModelScope.launch {
             _state.update { it.copy(isSuggesting = true) }
@@ -262,10 +306,24 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                 val prompt = Phase2Assistant.smartReplyPrompt(
                     context = current.userContext,
                     rollingTranscript = rollingTranscript,
-                    latestUtterance = latestUtterance,
+                    latestUtterance = cleanUtterance,
                     recentSummaries = current.recentSummaries,
+                    toolContext = Phase2ToolDispatcher(current.userContext, callLogStore).availableContext(),
                 )
-                Phase2Assistant.parseSuggestions(GemmaEngine.generate(prompt))
+                val response = generateWithLocalTools(
+                    initialPrompt = { prompt },
+                    promptWithToolResults = { dispatcher, toolResults ->
+                        Phase2Assistant.smartReplyPrompt(
+                            context = _state.value.userContext,
+                            rollingTranscript = rollingTranscript,
+                            latestUtterance = cleanUtterance,
+                            recentSummaries = _state.value.recentSummaries,
+                            toolContext = dispatcher.availableContext(),
+                            toolResults = toolResults,
+                        )
+                    },
+                )
+                Phase2Assistant.parseSuggestions(response)
             }.onSuccess { suggestions ->
                 _state.update { it.copy(isSuggesting = false, suggestions = suggestions) }
             }.onFailure {
@@ -304,6 +362,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         summaryStatus = "Call summary saved",
                         recentSummaries = formatRecentSummaries(),
+                        recentCallSummaries = callLogStore.loadRecent(10),
                     )
                 }
             }.onFailure { error ->
@@ -320,6 +379,24 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             error(GemmaEngine.status)
         }
         _state.update { it.copy(modelStatus = GemmaEngine.status) }
+    }
+
+    private suspend fun generateWithLocalTools(
+        initialPrompt: (Phase2ToolDispatcher) -> String,
+        promptWithToolResults: (Phase2ToolDispatcher, String) -> String,
+    ): String {
+        val dispatcher = Phase2ToolDispatcher(_state.value.userContext, callLogStore)
+        val firstResponse = GemmaEngine.generate(initialPrompt(dispatcher))
+        val toolCalls = Phase2ToolDispatcher.extractToolCalls(firstResponse)
+        if (toolCalls.isEmpty()) return firstResponse
+
+        val toolResults = toolCalls.map(dispatcher::dispatch)
+        return GemmaEngine.generate(
+            promptWithToolResults(
+                dispatcher,
+                Phase2ToolDispatcher.formatToolResults(toolResults),
+            ),
+        )
     }
 
     private fun routeAudioForCall() {
@@ -348,6 +425,10 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         return callLogStore.loadRecent()
             .joinToString("\n") { "- ${it.summary}" }
     }
+
+    companion object {
+        private const val SMART_REPLY_COOLDOWN_MS = 2_500L
+    }
 }
 
 data class CallState(
@@ -366,6 +447,8 @@ data class CallState(
     val isBriefingPanelOpen: Boolean = true,
     val isBriefingLoading: Boolean = false,
     val recentSummaries: String = "",
+    val recentCallSummaries: List<CallSummary> = emptyList(),
+    val isCallHistoryOpen: Boolean = false,
     val summaryStatus: String = "",
 )
 

@@ -1,185 +1,150 @@
 # Dhwani
 
-Dhwani is an Android accessibility prototype that helps deaf users participate in live phone calls.
+Dhwani is an Android accessibility prototype that helps deaf users take part in live phone calls.
 
-The app runs beside a normal phone call. The caller's speech is captured from speakerphone audio and shown as live captions. The deaf user can type or tap a suggested reply, and Dhwani speaks it aloud through Android Text-to-Speech so the caller can hear it.
+The app runs alongside a normal phone call. The caller's speech is captured from speakerphone audio and displayed as live captions. The user can type or tap a suggested reply, which Dhwani speaks aloud through Android Text-to-Speech so the caller can hear it.
 
-## Current State
+---
 
-Implemented in this repo:
+## Overview
 
-- Android app in Kotlin + Jetpack Compose.
-- Runtime permission screen.
-- Foreground microphone service.
-- Speakerphone microphone capture using `VOICE_COMMUNICATION`.
-- Acoustic echo cancellation and noise suppression setup.
-- Offline speech recognition wrapper using Vosk.
-- Android Text-to-Speech output.
-- MediaPipe LLM Inference wrapper for a local Gemma `.task` model.
-- Personal context form.
-- Gemma-generated smart replies.
-- Gemma-generated pre-call briefing.
-- Local recent call summaries using SharedPreferences.
+Dhwani is an on-device phone-call assistant. The goal is to combine live captions, smart replies, personal context, and call summaries — with optional sign-language input in the future — while keeping all sensitive call data on the user's device.
 
-Not implemented yet:
+---
 
-- Camera/sign-language input.
-- Room database or encrypted structured storage.
-- Native Gemma tool/function calling.
-- Automatic phone-call state detection.
-- Final production/demo polish.
+## Current Status
+
+**Implemented**
+
+- Android app in Kotlin + Jetpack Compose
+- Runtime permission screen
+- Foreground microphone service
+- Speakerphone capture using `VOICE_COMMUNICATION`
+- Acoustic echo cancellation and noise suppression
+- Offline speech recognition via Vosk
+- Android Text-to-Speech output
+- On-device LLM inference via MediaPipe (local Gemma `.task` model)
+- Personal context form
+- Gemma-generated smart replies and pre-call briefing
+- Local call summaries via SharedPreferences
+
+---
 
 ## Requirements
 
-Install these on the new development device:
+Install the following on the development machine:
 
-- Android Studio, recent stable version.
-- JDK 17.
-- Git.
-- Android SDK with API 34 or newer installed.
-- A real Android phone for testing.
-- Android phone with Android 8.0+.
-- Recommended phone: Pixel 7/8/9 or another arm64 phone with 6GB+ RAM.
+- Android Studio (recent stable release)
+- JDK 17
+- Git
+- Android SDK, API 34 or newer
+- A physical Android phone for testing (Android 8.0+, arm64, 6 GB+ RAM recommended — e.g. Pixel 7/8/9)
 
-The app is configured for:
+**Project configuration**
 
-- Kotlin `2.0.0`
-- Android Gradle Plugin `8.13.2`
-- Gradle wrapper `9.0-milestone-1`
-- Min SDK `26`
-- Target SDK `34`
-- Compile SDK `36`
-- ABI: `arm64-v8a`
+| Setting | Value |
+|---|---|
+| Kotlin | 2.0.0 |
+| Android Gradle Plugin | 8.13.2 |
+| Gradle wrapper | 9.0-milestone-1 |
+| Min SDK | 26 |
+| Target SDK | 34 |
+| Compile SDK | 36 |
+| ABI | arm64-v8a |
 
-## Clone And Open
+---
+
+## Setup
+
+### 1. Clone and open
 
 ```bash
 git clone <your-repo-url>
 cd gemma
 ```
 
-Open the project root in Android Studio.
+Open the project root in Android Studio and let Gradle sync finish.
 
-If Android Studio asks to trust the project, trust it. Then let Gradle sync finish.
+### 2. Local files (not committed)
 
-## Local Files Not Committed
-
-These files are intentionally not committed:
+The following are intentionally excluded from version control:
 
 - `local.properties`
 - Gemma `.task` model files
 - Vosk model folders
-- APK/AAB outputs
-- Gradle/Android Studio build folders
+- APK / AAB outputs
+- Gradle and Android Studio build folders
 
-On a new device, Android Studio usually creates `local.properties` automatically. It should look like this:
+Android Studio usually generates `local.properties` automatically. It should point to your SDK:
 
-```properties
+```
 sdk.dir=C\:\\Users\\<your-name>\\AppData\\Local\\Android\\Sdk
 ```
 
 Do not commit `local.properties`.
 
-## Model Setup
+### 3. Model setup
 
-Dhwani can run without the models, but captions and Gemma features need model files.
+Dhwani runs without models, but captions and Gemma features require them.
 
-### 1. Vosk Speech Models
+**Vosk speech models** — needed for live captions. Add at least one model:
 
-For live captions, add at least one Vosk model.
+| Language | Model | Path |
+|---|---|---|
+| English (India) | `vosk-model-small-en-in-0.4` | `app/src/main/assets/vosk-en/` |
+| Hindi | `vosk-model-small-hi-0.22` | `app/src/main/assets/vosk-hi/` |
 
-Expected model locations:
+After unzipping, copy the model contents into the matching folder. Keep the folder name exactly `vosk-en` or `vosk-hi`. Example layout:
 
-```text
+```
 app/src/main/assets/vosk-en/
-app/src/main/assets/vosk-hi/
+├── am/
+├── conf/
+├── graph/
+└── ivector/
 ```
 
-Recommended downloads:
+**Gemma model** — needed for smart replies, briefing, summaries, and the Test Gemma button. Expected file: `gemma-4-e4b-it-int4.task`.
 
-- English India: `vosk-model-small-en-in-0.4`
-- Hindi: `vosk-model-small-hi-0.22`
+Place it in either location:
 
-After downloading and unzipping, copy the model contents into one of these folders.
-
-Example final layout:
-
-```text
-app/src/main/assets/vosk-en/am/
-app/src/main/assets/vosk-en/conf/
-app/src/main/assets/vosk-en/graph/
-app/src/main/assets/vosk-en/ivector/
+```
+app/src/main/assets/models/gemma-4-e4b-it-int4.task   # bundled into debug APK (recommended for dev)
 ```
 
-or:
+or in the app's private files directory on the phone:
 
-```text
-app/src/main/assets/vosk-hi/am/
-app/src/main/assets/vosk-hi/conf/
-app/src/main/assets/vosk-hi/graph/
 ```
-
-Keep the folder name exactly `vosk-en` or `vosk-hi`.
-
-These folders are ignored by Git because they are large.
-
-### 2. Gemma Model
-
-For smart replies, briefing, summaries, and the `Test Gemma` button, the app expects this file:
-
-```text
-gemma-4-e4b-it-int4.task
-```
-
-Put it here if you want it bundled into the debug APK:
-
-```text
-app/src/main/assets/models/gemma-4-e4b-it-int4.task
-```
-
-Alternative: push/copy it into the app private files directory on the phone. The app checks:
-
-```text
 filesDir/gemma-4-e4b-it-int4.task
 ```
 
-For easiest setup while developing, use the assets folder:
+> Note: the Gemma model can be several GB. Low-RAM devices may fail to load it.
 
-```text
-app/src/main/assets/models/
-```
-
-The `.task` file is ignored by Git.
-
-Important: the Gemma model can be several GB. A low-RAM phone may fail to load it.
+---
 
 ## Build
 
-From Android Studio:
+**From Android Studio**
 
-1. Open the project.
-2. Wait for Gradle sync.
-3. Select the `app` run configuration.
-4. Connect your Android phone with USB debugging enabled.
-5. Click Run.
+1. Open the project and wait for Gradle sync.
+2. Select the `app` run configuration.
+3. Connect a phone with USB debugging enabled.
+4. Click Run.
 
-From terminal:
+**From the terminal**
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug          # macOS / Linux
+.\gradlew.bat assembleDebug      # Windows PowerShell
 ```
 
-On Windows PowerShell:
+The debug APK is generated at:
 
-```powershell
-.\gradlew.bat assembleDebug
 ```
-
-The debug APK will be generated under:
-
-```text
 app/build/outputs/apk/debug/
 ```
+
+---
 
 ## Phone Setup
 
@@ -187,74 +152,51 @@ On the test phone:
 
 1. Enable Developer Options.
 2. Enable USB Debugging.
-3. Connect the phone to the computer.
-4. Accept the USB debugging prompt.
-5. Install/run the app from Android Studio.
-6. Grant permissions when Dhwani asks.
+3. Connect to the computer and accept the debugging prompt.
+4. Install and run the app from Android Studio.
+5. Grant permissions when prompted.
 
-Permissions used:
+Permissions used: microphone, phone state, notifications, foreground microphone service, audio settings.
 
-- Microphone
-- Phone state
-- Notifications
-- Foreground microphone service
-- Audio settings
+---
 
-## How To Test The App
+## Testing
 
-### Basic App Test
+**Basic app test**
 
-1. Open Dhwani.
-2. Grant permissions.
-3. Fill the personal context form.
-4. Tap `Save`.
-5. Tap `Test Gemma`.
+1. Open Dhwani and grant permissions.
+2. Fill the personal context form and tap Save.
+3. Tap Test Gemma.
 
-Expected:
+Expected: if the Gemma model is present and loadable, the status shows a Gemma response; otherwise a "model unavailable" message appears.
 
-- If the Gemma model exists and the phone can load it, the status changes to a Gemma response.
-- If not, the app shows a model unavailable message.
+**Caption test**
 
-### Caption Test
+1. Ensure a Vosk model is present.
+2. Tap Start and speak near the phone (or play speech from another device).
 
-1. Make sure a Vosk model is present.
-2. Tap `Start`.
-3. Speak near the phone or play speech from another device.
+Expected: the caption box updates with recognized speech. A prompt to add a Vosk model means `vosk-en` / `vosk-hi` was not found.
 
-Expected:
+**Text-to-Speech test**
 
-- The live caption box updates with recognized speech.
+1. Type a message in *Type to speak*.
+2. Tap Speak.
 
-If it says to add a Vosk model, the app did not find `vosk-en` or `vosk-hi`.
+Expected: the phone speaks the text aloud.
 
-### TTS Test
+**Real call test**
 
-1. Type a message in `Type to speak`.
-2. Tap `Speak`.
+1. Start or receive a call and put it on speaker.
+2. Open Dhwani and tap Start.
+3. Have the caller speak, then type a reply and tap Speak.
 
-Expected:
+Expected: caller speech appears as captions, and typed replies are spoken over the call.
 
-- The phone speaks the typed text aloud.
+---
 
-### Real Call Test
+## Project Structure
 
-1. Start or receive a normal phone call.
-2. Put the phone on speaker.
-3. Open Dhwani.
-4. Tap `Start`.
-5. Ask the other person to speak.
-6. Watch captions.
-7. Type a reply and tap `Speak`.
-
-Expected:
-
-- Caller speech appears as captions.
-- Typed replies are spoken aloud through the phone speaker.
-- The caller should hear the spoken reply over the call.
-
-## Useful Project Structure
-
-```text
+```
 app/src/main/java/com/dhwani/app/
 ├── DhwaniApp.kt
 ├── MainActivity.kt
@@ -278,20 +220,13 @@ app/src/main/java/com/dhwani/app/
     └── theme/Theme.kt
 ```
 
-Important docs:
+Status documents: `docs/stage_1_STATUS.md` through `docs/stage_4_STATUS.md`.
 
-```text
-docs/stage_1_STATUS.md
-docs/stage_2_STATUS.md
-docs/stage_3_STATUS.md
-docs/stage_4_STATUS.md
-```
+---
 
 ## Troubleshooting
 
-### Gradle Sync Fails
-
-Try:
+**Gradle sync fails**
 
 ```bash
 ./gradlew --stop
@@ -299,79 +234,22 @@ Try:
 ./gradlew assembleDebug
 ```
 
-On Windows:
+Also verify: JDK is set to 17, the Android SDK is installed, `local.properties` points to the correct SDK path, and SDK 34+ is downloaded.
 
-```powershell
-.\gradlew.bat --stop
-.\gradlew.bat clean
-.\gradlew.bat assembleDebug
-```
+**Gemma not loaded** — Confirm `gemma-4-e4b-it-int4.task` exists in `app/src/main/assets/models/` or in the app's files directory on the phone, and that the device has enough RAM.
 
-Also check:
+**Captions not working** — Confirm a Vosk model exists at `vosk-en/` or `vosk-hi/` and contains real model files (not just `.gitkeep`). Rebuild and reinstall.
 
-- JDK is set to 17.
-- Android SDK is installed.
-- `local.properties` points to the correct SDK path.
-- Android Studio has downloaded SDK 34+.
+**TTS too quiet in a call** — Ensure the call is on speakerphone. The prototype relies on speakerphone loopback.
 
-### App Says Gemma Not Loaded
+**Crash when loading Gemma** — Likely insufficient RAM, a corrupt or incomplete model file, the wrong `.task` format, or an unsupported device ABI. Test without Gemma first, then add the model once captions and TTS work.
 
-Check that the file exists at:
-
-```text
-app/src/main/assets/models/gemma-4-e4b-it-int4.task
-```
-
-or inside the app files directory on the phone as:
-
-```text
-gemma-4-e4b-it-int4.task
-```
-
-Also check that the phone has enough RAM.
-
-### Captions Do Not Work
-
-Check that the Vosk model exists at:
-
-```text
-app/src/main/assets/vosk-en/
-```
-
-or:
-
-```text
-app/src/main/assets/vosk-hi/
-```
-
-The model folder should contain actual model files, not just `.gitkeep`.
-
-Then rebuild and reinstall the app.
-
-### TTS Is Too Quiet In A Call
-
-Make sure the phone call is on speaker. Dhwani routes audio using communication mode, but the real call still needs speakerphone for the prototype approach.
-
-### App Crashes When Loading Gemma
-
-Likely causes:
-
-- Phone does not have enough RAM.
-- Model file is corrupt or incomplete.
-- Wrong `.task` model format.
-- Device ABI is not supported.
-
-Try testing first without Gemma, then add the model after captions/TTS work.
+---
 
 ## Development Notes
 
-- Do not commit large model files.
-- Do not commit `local.properties`.
+- Do not commit large model files or `local.properties`.
 - Test on a real phone, not only an emulator.
-- The current app uses speakerphone loopback, not direct phone-call audio capture.
-- Echo cancellation depends on the phone hardware and Android audio stack.
-- Gemma generation is blocking right now, not streaming.
-
-## Vision
-
-Dhwani is designed as a private, on-device phone-call assistant. The long-term goal is to combine live captions, smart replies, personal context, call summaries, and eventually sign-language input while keeping sensitive call data on the user's phone.
+- The app uses speakerphone loopback, not direct call-audio capture.
+- Echo cancellation depends on the device hardware and Android audio stack.
+- Gemma generation is currently blocking, not streaming.

@@ -268,6 +268,7 @@ private fun LiveCallContent(
                     state = state,
                     onClose = vm::toggleSignPanel,
                     onCapture = vm::startSignCapture,
+                    onRecognizerReady = vm::onSignRecognizerReady,
                     onCaptureStatus = vm::onSignCaptureStatus,
                     onRecognition = vm::onSignRecognition,
                     onCaptureError = vm::onSignCaptureError,
@@ -438,6 +439,7 @@ private fun SignInputSection(
     state: CallState,
     onClose: () -> Unit,
     onCapture: () -> Unit,
+    onRecognizerReady: () -> Unit,
     onCaptureStatus: (String) -> Unit,
     onRecognition: (SignRecognition) -> Unit,
     onCaptureError: (String) -> Unit,
@@ -465,7 +467,7 @@ private fun SignInputSection(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "One sign at a time",
+                    text = "Keep both shoulders, one elbow, and your signing hand visible",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -490,6 +492,7 @@ private fun SignInputSection(
         if (!showCallPhrases) {
             SignCameraPreview(
                 captureRequestId = state.signCaptureRequestId,
+                onReady = onRecognizerReady,
                 onStatus = onCaptureStatus,
                 onResult = onRecognition,
                 onError = onCaptureError,
@@ -501,20 +504,27 @@ private fun SignInputSection(
 
             Button(
                 onClick = onCapture,
-                enabled = !state.isSignCapturing && !state.isSignTranslating,
+                enabled = state.isSignRecognizerReady &&
+                    !state.isSignCapturing &&
+                    !state.isSignTranslating,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
             ) {
-                if (state.isSignCapturing) {
+                if (state.isSignCapturing || !state.isSignRecognizerReady) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                     Spacer(Modifier.width(10.dp))
                 }
-                Text(if (state.isSignCapturing) "Keep signing" else "Recognize my sign")
+                Text(
+                    when {
+                        !state.isSignRecognizerReady -> "Getting recognizer ready"
+                        state.isSignCapturing -> "Keep signing"
+                        else -> "Recognize my sign"
+                    },
+                )
             }
 
             if (state.signStatus.isNotBlank()) {
@@ -581,13 +591,7 @@ private fun SignInputSection(
             }
         }
 
-        if (state.isSignTranslating) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(10.dp))
-                Text("Preparing reply")
-            }
-        } else if (state.signSentence.isNotBlank()) {
+        if (state.signSentence.isNotBlank()) {
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(8.dp),
@@ -623,6 +627,7 @@ private fun SignInputSection(
 @Composable
 private fun SignCameraPreview(
     captureRequestId: Long,
+    onReady: () -> Unit,
     onStatus: (String) -> Unit,
     onResult: (SignRecognition) -> Unit,
     onError: (String) -> Unit,
@@ -639,6 +644,7 @@ private fun SignCameraPreview(
     val analyzer = remember(context) {
         SignFrameAnalyzer(
             context = context.applicationContext,
+            onReady = onReady,
             onStatus = onStatus,
             onResult = onResult,
             onError = onError,

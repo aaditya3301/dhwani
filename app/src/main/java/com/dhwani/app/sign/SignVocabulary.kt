@@ -33,6 +33,13 @@ object SignVocabulary {
 
     fun fallbackSentence(gloss: String, languageLabel: String, context: UserContext): String {
         val cleanGloss = gloss.trim().replace('_', ' ')
+        val normalizedGloss = gloss.trim().uppercase().replace('_', ' ')
+        if (normalizedGloss == "YOU(PLURAL)") {
+            return if (languageLabel.equals("Hindi", ignoreCase = true)) "आप सब।" else "All of you."
+        }
+        if (normalizedGloss == "THANKYOU") {
+            return if (languageLabel.equals("Hindi", ignoreCase = true)) "धन्यवाद।" else "Thank you."
+        }
         if (cleanGloss.equals("MY HOME", ignoreCase = true) && context.voiceFriendlyAddress.isNotBlank()) {
             return if (languageLabel.equals("Hindi", ignoreCase = true)) {
                 "मेरा घर ${context.voiceFriendlyAddress} है।"
@@ -68,6 +75,9 @@ object SignInterpreter {
 
         Output exactly one sentence for the user to say now.
         Use ${if (targetLanguage.equals("Hindi", ignoreCase = true)) "Hindi in Devanagari script" else "English"}.
+        Preserve only the literal meaning of the gloss. Never add an action, answer, fact, or intent from the recent conversation.
+        Use recent conversation only to resolve grammar or politeness when the gloss already contains that meaning.
+        For a single noun or pronoun gloss, return a short literal phrase. Example: YOU(PLURAL) means "All of you", not "You are free".
         If the gloss asks for saved personal context, use the user context above.
         Do not explain. Do not mention sign language, captions, AI, or Dhwani.
     """.trimIndent()

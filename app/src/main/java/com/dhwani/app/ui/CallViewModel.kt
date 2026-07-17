@@ -21,7 +21,6 @@ import com.dhwani.app.llm.GemmaEngine
 import com.dhwani.app.llm.CallAssistant
 import com.dhwani.app.llm.AssistantToolDispatcher
 import com.dhwani.app.sign.SignCandidate
-import com.dhwani.app.sign.SignInterpreter
 import com.dhwani.app.sign.SignPhrase
 import com.dhwani.app.sign.SignRecognition
 import com.dhwani.app.sign.SignVocabulary
@@ -51,7 +50,6 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private var briefingJob: Job? = null
     private var summaryJob: Job? = null
     private var speechJob: Job? = null
-    private var signJob: Job? = null
     private var lastSuggestionAtMs: Long = 0
     private var lastSuggestionUtterance: String = ""
     private var callGeneration: Long = 0L
@@ -198,6 +196,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 isSignPanelOpen = opening,
                 isSignCapturing = if (opening) it.isSignCapturing else false,
+                isSignRecognizerReady = false,
             )
         }
     }
@@ -208,15 +207,29 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startSignCapture() {
         if (_state.value.isSignCapturing || _state.value.isSignTranslating) return
-        signJob?.cancel()
+        if (!_state.value.isSignRecognizerReady) {
+            _state.update { it.copy(signStatus = "Getting the sign recognizer ready...") }
+            return
+        }
         _state.update {
             it.copy(
                 isSignCapturing = true,
+                isSignTranslating = false,
                 signCaptureRequestId = it.signCaptureRequestId + 1L,
-                signStatus = "Loading sign recognizer...",
+                signStatus = "Starting capture...",
                 signCandidates = emptyList(),
                 selectedSignGloss = "",
                 signSentence = "",
+            )
+        }
+    }
+
+    fun onSignRecognizerReady() {
+        if (!_state.value.isSignPanelOpen) return
+        _state.update {
+            it.copy(
+                isSignRecognizerReady = true,
+                signStatus = if (it.isSignCapturing) it.signStatus else "Ready to recognize",
             )
         }
     }
@@ -230,20 +243,21 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         if (!_state.value.isSignCapturing) return
         val top = recognition.top
         val runnerUp = recognition.candidates.getOrNull(1)?.confidence ?: 0f
-        val accepted = top.confidence >= SIGN_CONFIDENCE_THRESHOLD &&
+        val strongSuggestion = top.confidence >= SIGN_SUGGESTION_THRESHOLD &&
             top.confidence - runnerUp >= SIGN_MARGIN_THRESHOLD
         _state.update {
             it.copy(
                 isSignCapturing = false,
                 signCandidates = recognition.candidates,
-                signStatus = if (accepted) {
-                    "Recognized ${top.gloss.lowercase().replaceFirstChar(Char::titlecase)}"
+                signStatus = if (!recognition.framingReliable) {
+                    "Low framing quality. These are guesses; choose one or step back and try again."
+                } else if (strongSuggestion) {
+                    "Possible match: ${top.gloss.lowercase().replaceFirstChar(Char::titlecase)}. Tap a result to confirm."
                 } else {
-                    "I am not certain. Choose the closest meaning below."
+                    "Not confident. Try again with your upper body visible, or choose a result below."
                 },
             )
         }
-        if (accepted) translateSignGloss(top.gloss)
     }
 
     fun onSignCaptureError(message: String) {
@@ -654,8 +668,6 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
         suggestionJob = null
         speechJob?.cancel()
         speechJob = null
-        signJob?.cancel()
-        signJob = null
         recorder.stop()
         stt = null
         appContext.stopService(Intent(appContext, CallService::class.java))
@@ -706,60 +718,27 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private fun translateSignGloss(gloss: String) {
         val cleanGloss = gloss.trim()
         if (cleanGloss.isBlank()) return
-        signJob?.cancel()
-        signJob = viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    selectedSignGloss = cleanGloss,
-                    isSignTranslating = true,
-                    signSentence = "",
-                    signStatus = "Translating $cleanGloss...",
-                )
-            }
-            val fallback = SignVocabulary.fallbackSentence(
-                gloss = cleanGloss,
-                languageLabel = _state.value.captionLanguage.label,
-                context = _state.value.userContext,
+        val current = _state.value
+        val sentence = SignVocabulary.fallbackSentence(
+            gloss = cleanGloss,
+            languageLabel = current.captionLanguage.label,
+            context = current.userContext,
+        )
+        _state.update {
+            it.copy(
+                selectedSignGloss = cleanGloss,
+                isSignTranslating = false,
+                signSentence = sentence,
+                signStatus = "Reply ready",
             )
-            runCatching {
-                ensureGemmaReady()
-                val current = _state.value
-                val conversationContext = current.transcript
-                    .takeLast(8)
-                    .joinToString("\n") { "${it.speaker.label}: ${it.text}" }
-                GemmaEngine.generate(
-                    SignInterpreter.glossToSentencePrompt(
-                        context = current.userContext,
-                        conversationContext = conversationContext,
-                        gloss = cleanGloss,
-                        targetLanguage = current.captionLanguage.label,
-                    ),
-                ).trim().lineSequence().firstOrNull().orEmpty().ifBlank { fallback }
-            }.onSuccess { sentence ->
-                _state.update {
-                    it.copy(
-                        isSignTranslating = false,
-                        signSentence = sentence,
-                        signStatus = "Signed reply ready",
-                    )
-                }
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        isSignTranslating = false,
-                        signSentence = fallback,
-                        signStatus = "Using demo fallback: ${error.message ?: "Gemma unavailable"}",
-                    )
-                }
-            }
         }
     }
 
     companion object {
         private const val SMART_REPLY_COOLDOWN_MS = 2_500L
         private const val MAX_TOOL_ROUNDS = 2
-        private const val SIGN_CONFIDENCE_THRESHOLD = 0.45f
-        private const val SIGN_MARGIN_THRESHOLD = 0.10f
+        private const val SIGN_SUGGESTION_THRESHOLD = 0.75f
+        private const val SIGN_MARGIN_THRESHOLD = 0.20f
     }
 }
 
@@ -789,6 +768,7 @@ data class CallState(
     val isCallHistoryOpen: Boolean = false,
     val summaryStatus: String = "",
     val isSignPanelOpen: Boolean = false,
+    val isSignRecognizerReady: Boolean = false,
     val isSignCapturing: Boolean = false,
     val signCaptureRequestId: Long = 0L,
     val isSignTranslating: Boolean = false,

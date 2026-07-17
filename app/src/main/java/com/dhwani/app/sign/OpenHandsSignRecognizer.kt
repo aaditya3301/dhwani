@@ -17,6 +17,7 @@ data class SignCandidate(
 
 data class SignRecognition(
     val candidates: List<SignCandidate>,
+    val framingReliable: Boolean = true,
 ) {
     val top: SignCandidate get() = candidates.first()
 }

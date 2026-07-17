@@ -39,6 +39,28 @@ class SignVocabularyTest {
     }
 
     @Test
+    fun includeThankyouLabelUsesNaturalReply() {
+        val sentence = SignVocabulary.fallbackSentence(
+            gloss = "THANKYOU",
+            languageLabel = "English",
+            context = UserContext(),
+        )
+
+        assertEquals("Thank you.", sentence)
+    }
+
+    @Test
+    fun pluralYouLabelKeepsLiteralMeaning() {
+        val sentence = SignVocabulary.fallbackSentence(
+            gloss = "YOU(PLURAL)",
+            languageLabel = "English",
+            context = UserContext(),
+        )
+
+        assertEquals("All of you.", sentence)
+    }
+
+    @Test
     fun homeGlossUsesSavedVoiceFriendlyAddress() {
         val context = UserContext().copyFromSetupFields(
             homeAddress = "14 MG Road, Bengaluru",

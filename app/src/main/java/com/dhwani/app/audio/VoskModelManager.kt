@@ -11,15 +11,28 @@ object VoskModelManager {
     fun prepareModels(context: Context) {
         MODEL_NAMES.forEach { modelName ->
             val target = File(context.filesDir, modelName)
-            if (target.exists()) return@forEach
+            if (isUsableModel(target)) return@forEach
+
+            val staging = File(context.filesDir, "$modelName.part")
+            target.deleteRecursively()
+            staging.deleteRecursively()
             runCatching {
-                copyAssetDirectory(context, modelName, target)
+                copyAssetDirectory(context, modelName, staging)
+                check(isUsableModel(staging)) { "Bundled $modelName model is incomplete" }
+                check(staging.renameTo(target)) { "Could not activate $modelName model" }
             }.onSuccess {
                 Log.i(TAG, "Copied $modelName to ${target.absolutePath}")
-            }.onFailure {
+            }.onFailure { error ->
+                staging.deleteRecursively()
                 target.deleteRecursively()
-                Log.i(TAG, "No bundled Vosk model found at assets/$modelName")
+                Log.w(TAG, "Could not prepare $modelName: ${error.message}")
             }
+        }
+    }
+
+    fun isUsableModel(directory: File): Boolean {
+        return REQUIRED_MODEL_FILES.all { relativePath ->
+            File(directory, relativePath).let { it.isFile && it.length() > 0L }
         }
     }
 
@@ -42,4 +55,11 @@ object VoskModelManager {
             )
         }
     }
+
+    private val REQUIRED_MODEL_FILES = listOf(
+        "am/final.mdl",
+        "conf/model.conf",
+        "graph/Gr.fst",
+        "graph/HCLr.fst",
+    )
 }

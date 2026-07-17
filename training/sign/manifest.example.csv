@@ -1,0 +1,4 @@
+video,gloss,split,category
+include/videos/hello_001.mp4,HELLO,train,greetings
+include/videos/hello_021.mp4,HELLO,validation,greetings
+include/videos/hello_031.mp4,HELLO,test,greetings

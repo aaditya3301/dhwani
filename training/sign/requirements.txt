@@ -1,0 +1,9 @@
+unsloth
+unsloth_zoo
+trl
+datasets
+transformers
+accelerate
+torch
+opencv-python-headless
+pillow

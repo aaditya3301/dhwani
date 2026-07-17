@@ -23,7 +23,7 @@ object CallAssistant {
         - get_payment_hint(label)
         - get_recent_call_summary(contact_name)
 
-        Current local context:
+        Available local record counts:
         ${toolContext.ifBlank { "None" }}
 
         Tool results:
@@ -46,16 +46,18 @@ object CallAssistant {
         - Do not explain.
         - Do not mention captions, AI, or deafness.
         - If the caller asks a question, answer or ask for clarification.
-        - If a local fact is needed and not present in Tool results, output one <tool_call> block only.
+        - If a local fact is needed and not present in Tool results, output one <tool_call> block only and no suggestions.
         - If Hindi is used, write Hindi in Devanagari.
 
         Tool call format:
         <tool_call>{"name":"get_address","args":{"label":"home"}}</tool_call>
 
         Otherwise output only:
+        <suggestions>
         1. ...
         2. ...
         3. ...
+        </suggestions>
     """.trimIndent()
 
     fun briefingPrompt(
@@ -77,7 +79,7 @@ object CallAssistant {
         - get_payment_hint(label)
         - get_recent_call_summary(contact_name)
 
-        Current local context:
+        Available local record counts:
         ${toolContext.ifBlank { "None" }}
 
         Tool results:
@@ -109,13 +111,17 @@ object CallAssistant {
     """.trimIndent()
 
     fun parseSuggestions(output: String): List<String> {
-        val numbered = output
+        val cleanOutput = AssistantToolDispatcher.removeToolBlocks(output)
+            .replace(Regex("</?suggestions>", RegexOption.IGNORE_CASE), "")
+        val numbered = cleanOutput
             .lineSequence()
             .map { it.trim() }
             .map { it.replace(Regex("^[-*]\\s*"), "") }
             .map { it.replace(Regex("^\\d+[.)]\\s*"), "") }
             .filter { it.isNotBlank() }
             .filterNot { it.contains("suggestion", ignoreCase = true) }
+            .filterNot { it.startsWith("Opening:", ignoreCase = true) }
+            .map { it.trim('"') }
             .take(3)
             .toList()
 
@@ -132,11 +138,11 @@ object CallAssistant {
         return buildList {
             add("Name=${context.name.ifBlank { "unknown" }}")
             add("Language=${context.preferredLanguage}")
-            if (context.voiceFriendlyAddress.isNotBlank()) {
-                add("Address=${context.voiceFriendlyAddress}")
+            context.addresses.firstOrNull()?.let { address ->
+                add("Address=${address.voiceFriendly.ifBlank { address.fullAddress }}")
             }
-            if (context.importantPeople.isNotBlank()) {
-                add("People=${context.importantPeople}")
+            if (context.contacts.isNotEmpty()) {
+                add("People=${context.contacts.joinToString { "${it.name} (${it.role})" }}")
             }
             if (context.medicalNotes.isNotBlank()) {
                 add("Medical=${context.medicalNotes}")

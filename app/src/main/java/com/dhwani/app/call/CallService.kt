@@ -23,7 +23,7 @@ class CallService : Service() {
             .setOngoing(true)
             .build()
 
-        val foregroundType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val foregroundType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         } else {
             0
@@ -32,7 +32,6 @@ class CallService : Service() {
     }
 
     private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
             NotificationChannel(

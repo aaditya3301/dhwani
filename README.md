@@ -8,7 +8,7 @@ The app runs alongside a normal phone call. The caller's speech is captured from
 
 ## Overview
 
-Dhwani is an on-device phone-call assistant. The goal is to combine live captions, smart replies, personal context, and call summaries — with optional sign-language input in the future — while keeping all sensitive call data on the user's device.
+Dhwani is an on-device phone-call assistant. The goal is to combine live captions, smart replies, personal context, sign input, and call summaries while keeping all sensitive call data on the user's device.
 
 ---
 
@@ -17,7 +17,8 @@ Dhwani is an on-device phone-call assistant. The goal is to combine live caption
 **Implemented**
 
 - Android app in Kotlin + Jetpack Compose
-- Runtime permission screen
+- Minimal three-section UI for live calls, outgoing calls, and personal details
+- Microphone permission at startup and camera permission only for sign reply
 - Foreground microphone service
 - Speakerphone capture using `VOICE_COMMUNICATION`
 - Acoustic echo cancellation and noise suppression
@@ -25,8 +26,12 @@ Dhwani is an on-device phone-call assistant. The goal is to combine live caption
 - Android Text-to-Speech output
 - On-device LLM inference via MediaPipe (local Gemma `.task` model)
 - Personal context form
+- Structured encrypted local personal context
 - Gemma-generated smart replies and pre-call briefing
-- Local call summaries via SharedPreferences
+- Local tool dispatch for address/contact/medical/payment/recent-call context
+- Automatic on-device recognition for 263 isolated INCLUDE signs
+- Manual 15-phrase call vocabulary for meanings absent from the public model
+- Encrypted local call summaries
 
 ---
 
@@ -60,7 +65,7 @@ Install the following on the development machine:
 
 ```bash
 git clone <your-repo-url>
-cd gemma
+cd dhwani
 ```
 
 Open the project root in Android Studio and let Gradle sync finish.
@@ -85,7 +90,8 @@ Do not commit `local.properties`.
 
 ### 3. Model setup
 
-Dhwani runs without models, but captions and Gemma features require them.
+Dhwani's stage 3 sign models are already bundled. Captions and Gemma features
+use the additional models below.
 
 **Vosk speech models** — needed for live captions. Add at least one model:
 
@@ -104,21 +110,26 @@ app/src/main/assets/vosk-en/
 └── ivector/
 ```
 
-**Gemma model** — needed for smart replies, briefing, summaries, and the Test Gemma button. Expected file: `gemma-4-e4b-it-int4.task`.
+**Gemma model** — needed for smart replies, briefing, summaries, and sign-sentence generation. Download the Android MediaPipe-compatible `gemma3-1b-it-int4.task` (about 555 MB) from [litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT). Hugging Face requires a free account and acceptance of the Gemma license before downloading.
 
 Place it in either location:
 
 ```
-app/src/main/assets/models/gemma-4-e4b-it-int4.task   # bundled into debug APK (recommended for dev)
+app/src/main/assets/models/gemma3-1b-it-int4.task   # bundled into the debug APK
 ```
 
 or in the app's private files directory on the phone:
 
 ```
-filesDir/gemma-4-e4b-it-int4.task
+filesDir/gemma3-1b-it-int4.task
 ```
 
-> Note: the Gemma model can be several GB. Low-RAM devices may fail to load it.
+> Note: Google recommends testing MediaPipe LLM Inference on a high-end physical Android phone (for example, Pixel 8 or Samsung S23 and newer). Emulators and low-RAM devices may fail to load it.
+
+**Sign recognition models** - no setup is required. The app includes the
+MediaPipe Holistic landmark model, converted OpenHands INCLUDE BiLSTM, and its
+263-label vocabulary under `app/src/main/assets/models/sign/`. stage 3 does not
+require training, a dataset, or a Hugging Face login.
 
 ---
 
@@ -156,7 +167,7 @@ On the test phone:
 4. Install and run the app from Android Studio.
 5. Grant permissions when prompted.
 
-Permissions used: microphone, phone state, notifications, foreground microphone service, audio settings.
+Permissions used: microphone, optional camera, notifications, foreground microphone service, and audio settings.
 
 ---
 
@@ -164,11 +175,11 @@ Permissions used: microphone, phone state, notifications, foreground microphone 
 
 **Basic app test**
 
-1. Open Dhwani and grant permissions.
-2. Fill the personal context form and tap Save.
-3. Tap Test Gemma.
+1. Open Dhwani and allow microphone access.
+2. Open **You**, add a name and any useful details, then tap **Save details**.
+3. Open **Live** and tap **Start captions**.
 
-Expected: if the Gemma model is present and loadable, the status shows a Gemma response; otherwise a "model unavailable" message appears.
+Expected: the live caption area enters listening mode. Smart features load when first needed.
 
 **Caption test**
 
@@ -184,13 +195,34 @@ Expected: the caption box updates with recognized speech. A prompt to add a Vosk
 
 Expected: the phone speaks the text aloud.
 
+**Sign input test**
+
+1. Open **Live** and tap **Sign reply**.
+2. Allow camera access and frame your upper body and both hands in good light.
+3. Tap **Recognize my sign** and perform one isolated sign for about three seconds.
+4. Confirm one of the model's top results, or choose a manual call phrase such as `Reschedule`.
+5. Tap **Edit first** or **Speak now**.
+
+Expected: the on-device model predicts an INCLUDE gloss, Dhwani converts it into
+a natural reply, and the normal draft/TTS path is reused. Try `Hello`, `Doctor`,
+`Medicine`, `Hospital`, or `Thankyou` for meanings present in both workflows.
+
 **Real call test**
 
 1. Start or receive a call and put it on speaker.
 2. Open Dhwani and tap Start.
-3. Have the caller speak, then type a reply and tap Speak.
+3. Have the caller speak, then type a reply or tap a smart reply.
+4. Tap Stop after the call to save a summary.
 
 Expected: caller speech appears as captions, and typed replies are spoken over the call.
+
+**Outgoing briefing test**
+
+1. Enter a call goal in *Pre-call briefing*.
+2. Tap Brief.
+3. Confirm the phone number field, then tap Place call.
+
+Expected: Dhwani opens the Android call/dial screen and starts the call pipe.
 
 ---
 
@@ -209,10 +241,16 @@ app/src/main/java/com/dhwani/app/
 │   └── CallService.kt
 ├── data/
 │   ├── CallLogStore.kt
+│   ├── SecureJsonStore.kt
 │   └── UserContext.kt
 ├── llm/
 │   ├── GemmaEngine.kt
-│   └── CallAssistant.kt
+│   ├── CallAssistant.kt
+│   └── AssistantToolDispatcher.kt
+├── sign/
+│   ├── OpenHandsSignRecognizer.kt
+│   ├── SignFrameAnalyzer.kt
+│   └── SignVocabulary.kt
 └── ui/
     ├── CallScreen.kt
     ├── CallViewModel.kt
@@ -221,6 +259,9 @@ app/src/main/java/com/dhwani/app/
 ```
 
 Status documents: `docs/stage_1_STATUS.md` through `docs/stage_4_STATUS.md`.
+
+stage 3 model provenance and the optional conversion workflow are documented in
+`app/src/main/assets/models/sign/README.md` and `docs/stage_3_TRAINING.md`.
 
 ---
 
@@ -236,7 +277,7 @@ Status documents: `docs/stage_1_STATUS.md` through `docs/stage_4_STATUS.md`.
 
 Also verify: JDK is set to 17, the Android SDK is installed, `local.properties` points to the correct SDK path, and SDK 34+ is downloaded.
 
-**Gemma not loaded** — Confirm `gemma-4-e4b-it-int4.task` exists in `app/src/main/assets/models/` or in the app's files directory on the phone, and that the device has enough RAM.
+**Gemma not loaded** — Confirm `gemma3-1b-it-int4.task` exists in `app/src/main/assets/models/` or in the app's files directory on the phone, and that the device has enough RAM.
 
 **Captions not working** — Confirm a Vosk model exists at `vosk-en/` or `vosk-hi/` and contains real model files (not just `.gitkeep`). Rebuild and reinstall.
 
@@ -244,12 +285,20 @@ Also verify: JDK is set to 17, the Android SDK is installed, `local.properties` 
 
 **Crash when loading Gemma** — Likely insufficient RAM, a corrupt or incomplete model file, the wrong `.task` format, or an unsupported device ABI. Test without Gemma first, then add the model once captions and TTS work.
 
+**Sign recognition asks to retry** - Keep your shoulders, upper body, and both
+hands visible for the full capture. Use even front lighting and avoid moving the
+phone while signing. The model recognizes one sign per capture.
+
 ---
 
 ## Development Notes
 
-- Do not commit large model files or `local.properties`.
+- Do not commit downloaded Gemma/Vosk models or `local.properties`; the small
+  stage 3 mobile assets are intentionally bundled for reproducible offline use.
 - Test on a real phone, not only an emulator.
 - The app uses speakerphone loopback, not direct call-audio capture.
 - Echo cancellation depends on the device hardware and Android audio stack.
 - Gemma generation is currently blocking, not streaming.
+- stage 3 uses a pretrained 263-class isolated-sign model. It does not claim
+  continuous ISL sentence translation or automatic support for phrases outside
+  the INCLUDE vocabulary.

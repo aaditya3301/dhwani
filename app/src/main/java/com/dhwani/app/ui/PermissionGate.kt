@@ -32,14 +32,14 @@ fun PermissionGate(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Dhwani needs microphone, phone state, and notification access.")
+        Text("Allow microphone access to caption calls.")
         Text(
-            text = "These keep captions active while a real phone call is running.",
+            text = "Your audio stays on this phone and is processed locally.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
         )
         Button(onClick = permissions::launchMultiplePermissionRequest) {
-            Text("Grant access")
+            Text("Continue")
         }
     }
 }

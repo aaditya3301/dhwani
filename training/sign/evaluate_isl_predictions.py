@@ -1,4 +1,4 @@
-"""Compute stage 3 recognition metrics from a prediction CSV.
+"""Compute sign-recognition metrics from a prediction CSV.
 
 Required columns:
     expected,predicted

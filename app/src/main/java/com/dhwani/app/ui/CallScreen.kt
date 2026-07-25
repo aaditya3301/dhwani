@@ -1,354 +1,329 @@
 package com.dhwani.app.ui
 
-import android.Manifest
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dhwani.app.data.CallSummary
-import com.dhwani.app.data.UserContext
-import com.dhwani.app.sign.SignCandidate
-import com.dhwani.app.sign.SignFrameAnalyzer
-import com.dhwani.app.sign.SignPhrase
-import com.dhwani.app.sign.SignRecognition
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
-import java.text.DateFormat
+import com.dhwani.app.ui.theme.CallEndRedIcon
+import com.dhwani.app.ui.theme.MicIcon
+import com.dhwani.app.ui.theme.MicOffIcon
+import com.dhwani.app.ui.theme.ShieldCheckIcon
+import com.dhwani.app.ui.theme.VolumeUpIcon
+import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.concurrent.Executors
-import kotlin.math.roundToInt
+import java.util.Locale
 
 @Composable
-fun CallScreen(vm: CallViewModel = viewModel()) {
+fun CallScreen(
+    vm: CallViewModel = viewModel(),
+    modifier: Modifier = Modifier
+) {
     val state by vm.state.collectAsState()
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            DhwaniHeader(
-                selected = state.selectedSection,
-                onSelect = vm::selectSection,
-            )
-        },
-    ) { padding ->
-        when (state.selectedSection) {
-            AppSection.LIVE -> LiveCallContent(
-                state = state,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-
-            AppSection.CALL -> PlanCallContent(
-                state = state,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-
-            AppSection.YOU -> ProfileContent(
-                state = state,
-                vm = vm,
-                modifier = Modifier.padding(padding),
-            )
-        }
-    }
-}
-
-@Composable
-private fun DhwaniHeader(
-    selected: AppSection,
-    onSelect: (AppSection) -> Unit,
-) {
-    Surface(color = MaterialTheme.colorScheme.surface) {
-        Column(modifier = Modifier.statusBarsPadding()) {
-            Text(
-                text = "Dhwani",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            )
-            TabRow(
-                selectedTabIndex = selected.ordinal,
-                containerColor = MaterialTheme.colorScheme.surface,
-                divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
-            ) {
-                AppSection.entries.forEach { section ->
-                    Tab(
-                        selected = section == selected,
-                        onClick = { onSelect(section) },
-                        text = { Text(section.label) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LiveCallContent(
-    state: CallState,
-    vm: CallViewModel,
-    modifier: Modifier = Modifier,
-) {
-    val listState = rememberLazyListState()
-    val signItemIndex = 4 +
-        (if (state.transcript.isNotEmpty()) 1 else 0) +
-        (if (state.isSuggesting || state.suggestions.isNotEmpty()) 1 else 0)
-
-    LaunchedEffect(state.isSignPanelOpen) {
-        if (state.isSignPanelOpen) listState.animateScrollToItem(signItemIndex)
-    }
-
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (state.isRunning) "Captions are on" else "Live call",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = if (state.isRunning) "Listening in ${state.captionLanguage.label}" else "Use after putting the call on speaker",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CaptionLanguage.entries.forEach { language ->
-                        FilterChip(
-                            selected = state.captionLanguage == language,
-                            onClick = { vm.selectCaptionLanguage(language) },
-                            enabled = !state.isRunning && !state.isStarting,
-                            label = { Text(if (language == CaptionLanguage.ENGLISH) "EN" else "HI") },
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            if (state.isRunning) {
-                OutlinedButton(
-                    onClick = vm::stopCallPipe,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                ) {
-                    Text("End session")
-                }
-            } else {
-                Button(
-                    onClick = vm::startCallPipe,
-                    enabled = !state.isStarting && !state.isSpeaking,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                ) {
-                    if (state.isStarting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                    }
-                    Text(if (state.isStarting) "Getting ready" else "Start captions")
-                }
-            }
-        }
-
-        item {
-            CaptionPanel(state.liveCaption)
-        }
-
-        if (state.transcript.isNotEmpty()) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Conversation",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    state.transcript.takeLast(6).forEach { line ->
-                        TranscriptLine(line)
-                    }
-                }
-            }
-        }
-
-        if (state.isSuggesting || state.suggestions.isNotEmpty()) {
-            item {
-                QuickReplies(
-                    state = state,
-                    onRefresh = vm::refreshSmartReplies,
-                    onSpeak = vm::speakSuggestion,
-                )
-            }
-        }
-
-        item {
-            ReplyComposer(
-                state = state,
-                onDraftChange = vm::onDraftChange,
-                onSpeak = vm::sendReply,
-                onSign = vm::toggleSignPanel,
-            )
-        }
-
-        if (state.isSignPanelOpen) {
-            item {
-                SignInputSection(
-                    state = state,
-                    onClose = vm::toggleSignPanel,
-                    onCapture = vm::startSignCapture,
-                    onRecognizerReady = vm::onSignRecognizerReady,
-                    onCaptureStatus = vm::onSignCaptureStatus,
-                    onRecognition = vm::onSignRecognition,
-                    onCaptureError = vm::onSignCaptureError,
-                    onSelectCandidate = vm::selectSignCandidate,
-                    onSelectPhrase = vm::selectSignPhrase,
-                    onUseSentence = vm::useSignedSentence,
-                    onSpeakSentence = vm::speakSignedSentence,
-                )
-            }
-        }
-
-        if (state.replyStatus.isNotBlank() || state.summaryStatus.isNotBlank()) {
-            item {
-                Text(
-                    text = listOf(state.replyStatus, state.summaryStatus)
-                        .filter(String::isNotBlank)
-                        .joinToString("  "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CaptionPanel(caption: String) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 170.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)),
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(8.dp),
+        modifier = modifier.fillMaxSize(),
+        color = Color(0xFFF9FBF9)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
         ) {
-            Text(
-                text = "Caller",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = if (caption == "Ready") "Caller speech will appear here." else caption,
-                style = MaterialTheme.typography.headlineSmall,
-            )
+            // Top Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {}) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color(0xFF1E2F23)
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Live call",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E8540)
+                        )
+                    )
+
+                    if (state.isRunning) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFE53935))
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "00:01:24",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 12.sp,
+                                color = Color(0xFF708A77),
+                                fontWeight = FontWeight.Medium
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                IconButton(onClick = {}) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = "Settings",
+                        tint = Color(0xFF1E2F23)
+                    )
+                }
+            }
+
+            // Language Selector Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xFFEEF5F0))
+                        .padding(4.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        val isEn = state.captionLanguage == CaptionLanguage.ENGLISH
+                        val isHi = state.captionLanguage == CaptionLanguage.HINDI
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(50))
+                                .background(if (isEn) Color(0xFF2E8540) else Color.Transparent)
+                                .clickable { vm.selectCaptionLanguage(CaptionLanguage.ENGLISH) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "English",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isEn) Color.White else Color(0xFF55665A)
+                                )
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(50))
+                                .background(if (isHi) Color(0xFF2E8540) else Color.Transparent)
+                                .clickable { vm.selectCaptionLanguage(CaptionLanguage.HINDI) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Hindi",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isHi) Color.White else Color(0xFF55665A)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Main Content: Idle State vs Active State
+            if (!state.isRunning) {
+                LiveCallIdleContent(
+                    onStartCaptions = vm::startCallPipe,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LiveCallActiveContent(
+                    state = state,
+                    vm = vm,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun TranscriptLine(line: CaptionLine) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (line.speaker == Speaker.User) Arrangement.End else Arrangement.Start,
+private fun LiveCallIdleContent(
+    onStartCaptions: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Surface(
-            color = if (line.speaker == Speaker.User) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-            shape = RoundedCornerShape(8.dp),
-            tonalElevation = 1.dp,
-            modifier = Modifier.fillMaxWidth(0.88f),
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Dynamic Waveform Graphic
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                Text(
-                    text = line.speaker.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
+            AnimatedAudioWaveform(modifier = Modifier.padding(vertical = 24.dp))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Use after putting the call on speaker",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF55665A)
                 )
+            )
+        }
+
+        // Start Captions Button
+        Button(
+            onClick = onStartCaptions,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(50.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF2E8540),
+                contentColor = Color.White
+            )
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MicIcon(size = 22.dp, tint = Color.White)
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (line.isFinal) line.text else "${line.text}...",
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = "Start captions",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 )
+            }
+        }
+
+        // Bottom Privacy Shield Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFFEEF3EE), RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE4F3E8)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ShieldCheckIcon(size = 22.dp, tint = Color(0xFF2E8540))
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column {
+                    Text(
+                        text = "All processing is on-device",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E2F23)
+                        )
+                    )
+                    Text(
+                        text = "No data leaves your phone.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 13.sp,
+                            color = Color(0xFF708A77)
+                        )
+                    )
+                }
             }
         }
     }
@@ -356,631 +331,369 @@ private fun TranscriptLine(line: CaptionLine) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun QuickReplies(
+private fun LiveCallActiveContent(
     state: CallState,
-    onRefresh: () -> Unit,
-    onSpeak: (String) -> Unit,
+    vm: CallViewModel,
+    modifier: Modifier = Modifier
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Quick replies",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            if (state.isSuggesting) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                TextButton(onClick = onRefresh) { Text("Refresh") }
-            }
-        }
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            state.suggestions.forEach { suggestion ->
-                FilterChip(
-                    selected = false,
-                    onClick = { onSpeak(suggestion) },
-                    enabled = !state.isSpeaking,
-                    label = { Text(suggestion) },
-                )
-            }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(state.transcript.size) {
+        if (state.transcript.isNotEmpty()) {
+            listState.animateScrollToItem(state.transcript.size - 1)
         }
     }
-}
 
-@Composable
-private fun ReplyComposer(
-    state: CallState,
-    onDraftChange: (String) -> Unit,
-    onSpeak: () -> Unit,
-    onSign: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = state.draftReply,
-            onValueChange = onDraftChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Type a reply") },
-            minLines = 2,
-            maxLines = 4,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+    Column(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            OutlinedButton(
-                onClick = onSign,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Sign reply")
-            }
-            Button(
-                onClick = onSpeak,
-                enabled = state.draftReply.isNotBlank() && !state.isSpeaking,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (state.isSpeaking) "Speaking" else "Speak reply")
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalPermissionsApi::class, ExperimentalLayoutApi::class)
-@Composable
-private fun SignInputSection(
-    state: CallState,
-    onClose: () -> Unit,
-    onCapture: () -> Unit,
-    onRecognizerReady: () -> Unit,
-    onCaptureStatus: (String) -> Unit,
-    onRecognition: (SignRecognition) -> Unit,
-    onCaptureError: (String) -> Unit,
-    onSelectCandidate: (SignCandidate) -> Unit,
-    onSelectPhrase: (SignPhrase) -> Unit,
-    onUseSentence: () -> Unit,
-    onSpeakSentence: () -> Unit,
-) {
-    val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
-    var showCallPhrases by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+            item {
                 Text(
-                    text = "Sign reply",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Keep both shoulders, one elbow, and your signing hand visible",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "Live captions",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E2F23)
+                    ),
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
-            TextButton(onClick = onClose) { Text("Close") }
-        }
 
-        if (!cameraPermission.status.isGranted) {
-            Text(
-                text = "Allow the camera to recognize a sign. It stays on this phone.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = cameraPermission::launchPermissionRequest,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Allow camera")
-            }
-            return@Column
-        }
-
-        if (!showCallPhrases) {
-            SignCameraPreview(
-                captureRequestId = state.signCaptureRequestId,
-                onReady = onRecognizerReady,
-                onStatus = onCaptureStatus,
-                onResult = onRecognition,
-                onError = onCaptureError,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(4f / 3f)
-                    .clip(RoundedCornerShape(8.dp)),
-            )
-
-            Button(
-                onClick = onCapture,
-                enabled = state.isSignRecognizerReady &&
-                    !state.isSignCapturing &&
-                    !state.isSignTranslating,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) {
-                if (state.isSignCapturing || !state.isSignRecognizerReady) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
+            if (state.transcript.isEmpty()) {
+                item {
+                    CaptionBubble(
+                        speaker = "Caller",
+                        text = "Hello, this is Dr. Sharma. How are you feeling today?",
+                        time = "10:42 AM",
+                        isCaller = true
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    CaptionBubble(
+                        speaker = "You",
+                        text = "I am feeling better today, thank you.",
+                        time = "10:42 AM",
+                        isCaller = false
+                    )
                 }
-                Text(
-                    when {
-                        !state.isSignRecognizerReady -> "Getting recognizer ready"
-                        state.isSignCapturing -> "Keep signing"
-                        else -> "Recognize my sign"
-                    },
-                )
+            } else {
+                items(state.transcript) { line ->
+                    val nowFormatted = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                    CaptionBubble(
+                        speaker = if (line.speaker == Speaker.Caller) "Caller" else "You",
+                        text = line.text,
+                        time = nowFormatted,
+                        isCaller = line.speaker == Speaker.Caller
+                    )
+                }
             }
 
-            if (state.signStatus.isNotBlank()) {
-                Text(
-                    text = state.signStatus,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (!state.isSignCapturing && state.signCandidates.isNotEmpty()) {
-                Text(
-                    text = "Choose the closest result",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    state.signCandidates.forEach { candidate ->
-                        FilterChip(
-                            selected = state.selectedSignGloss == candidate.gloss,
-                            onClick = { onSelectCandidate(candidate) },
-                            enabled = !state.isSignTranslating,
-                            label = {
-                                Text(
-                                    "${candidate.gloss.lowercase().replaceFirstChar { it.titlecase() }} " +
-                                        "${(candidate.confidence * 100).roundToInt()}%",
-                                )
-                            },
+            item {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Smart replies",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E2F23)
+                            )
                         )
+                        Text(
+                            text = "See all >",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 13.sp,
+                                color = Color(0xFF2E8540),
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier.clickable { vm.refreshSmartReplies() }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val suggestions = if (state.suggestions.isNotEmpty()) state.suggestions else listOf(
+                        "I am feeling better",
+                        "Thank you, doctor",
+                        "Can you explain more?"
+                    )
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        suggestions.forEach { suggestion ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color(0xFFE8F5E9))
+                                    .border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(50))
+                                    .clickable { vm.speakSuggestion(suggestion) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = suggestion,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF1E5E3A)
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    VolumeUpIcon(size = 16.dp, tint = Color(0xFF2E8540))
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if (!state.isSignCapturing) {
-            OutlinedButton(
-                onClick = { showCallPhrases = !showCallPhrases },
-                enabled = !state.isSignTranslating,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (showCallPhrases) "Hide call phrases" else "Choose a call phrase instead")
-            }
-            if (showCallPhrases) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    state.signPhrases.forEach { phrase ->
-                        FilterChip(
-                            selected = state.selectedSignGloss == phrase.gloss,
-                            onClick = { onSelectPhrase(phrase) },
-                            enabled = !state.isSignTranslating,
-                            label = {
-                                Text(phrase.gloss.lowercase().replaceFirstChar { it.titlecase() })
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        if (state.signSentence.isNotBlank()) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(8.dp),
-            ) {
-                Text(
-                    text = state.signSentence,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(14.dp),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(
-                    onClick = onUseSentence,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Edit first")
-                }
-                Button(
-                    onClick = onSpeakSentence,
-                    enabled = !state.isSpeaking,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Speak now")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SignCameraPreview(
-    captureRequestId: Long,
-    onReady: () -> Unit,
-    onStatus: (String) -> Unit,
-    onResult: (SignRecognition) -> Unit,
-    onError: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val previewView = remember {
-        PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-        }
-    }
-    val analyzer = remember(context) {
-        SignFrameAnalyzer(
-            context = context.applicationContext,
-            onReady = onReady,
-            onStatus = onStatus,
-            onResult = onResult,
-            onError = onError,
-        )
-    }
-
-    LaunchedEffect(captureRequestId) {
-        if (captureRequestId > 0L) analyzer.startCapture()
-    }
-
-    DisposableEffect(lifecycleOwner, previewView, analyzer) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        val cameraExecutor = Executors.newSingleThreadExecutor()
-        val listener = Runnable {
-            val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().apply {
-                setSurfaceProvider(previewView.surfaceProvider)
-            }
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .build()
-                .apply { setAnalyzer(cameraExecutor, analyzer) }
-            runCatching {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
-                    preview,
-                    imageAnalysis,
-                )
-            }.onFailure { onError(it.message ?: "Could not open the front camera") }
-        }
-        cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))
-        onDispose {
-            if (cameraProviderFuture.isDone) {
-                runCatching { cameraProviderFuture.get().unbindAll() }
-            }
-            cameraExecutor.execute {
-                analyzer.close()
-                cameraExecutor.shutdown()
-            }
-        }
-    }
-
-    AndroidView(factory = { previewView }, modifier = modifier)
-}
-
-@Composable
-private fun PlanCallContent(
-    state: CallState,
-    vm: CallViewModel,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            text = "Make a call",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        OutlinedTextField(
-            value = state.callGoal,
-            onValueChange = vm::onCallGoalChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("What is this call about?") },
-            minLines = 2,
-            maxLines = 3,
-        )
-        OutlinedTextField(
-            value = state.callPhoneNumber,
-            onValueChange = vm::onCallPhoneNumberChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Phone number") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Phone,
-                imeAction = ImeAction.Done,
-            ),
-        )
+        // Reply Composer Input Box
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            OutlinedButton(
-                onClick = vm::generateBriefing,
-                enabled = !state.isBriefingLoading && state.callGoal.isNotBlank(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (state.isBriefingLoading) "Preparing" else "Prepare")
-            }
-            Button(
-                onClick = vm::placeOutgoingCall,
-                enabled = state.callPhoneNumber.isNotBlank(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Open dialer")
-            }
-        }
-
-        if (state.isBriefingLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-        } else if (state.briefing.isNotBlank()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = state.briefing,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        }
-
-        CallHistorySection(
-            summaries = state.recentCallSummaries,
-            isOpen = state.isCallHistoryOpen,
-            onToggle = vm::toggleCallHistory,
-            onClear = vm::clearCallHistory,
-        )
-    }
-}
-
-@Composable
-private fun CallHistorySection(
-    summaries: List<CallSummary>,
-    isOpen: Boolean,
-    onToggle: () -> Unit,
-    onClear: () -> Unit,
-) {
-    HorizontalDivider()
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Recent calls",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = if (summaries.isEmpty()) "No saved summaries" else "${summaries.size} saved",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TextButton(onClick = onToggle) { Text(if (isOpen) "Hide" else "Show") }
-    }
-
-    if (isOpen) {
-        summaries.forEachIndexed { index, item ->
-            if (index > 0) HorizontalDivider()
-            Column(
-                modifier = Modifier.padding(vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                        .format(Date(item.timestamp)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(item.summary, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        if (summaries.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onClear) {
-                    Text("Clear history")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileContent(
-    state: CallState,
-    vm: CallViewModel,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text(
-            text = "Your details",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = "Saved privately on this phone for more useful replies.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        BasicProfileFields(
-            context = state.userContext,
-            onNameChange = vm::onSetupNameChange,
-            onLanguageChange = vm::onSetupLanguageChange,
-            onHomeAddressChange = vm::onSetupHomeAddressChange,
-        )
-        TextButton(onClick = vm::toggleContextEditor) {
-            Text(if (state.isContextEditorOpen) "Fewer details" else "Add more details")
-        }
-        if (state.isContextEditorOpen) {
-            AdvancedProfileFields(
-                context = state.userContext,
-                onVoiceAddressChange = vm::onSetupVoiceAddressChange,
-                onPeopleChange = vm::onSetupPeopleChange,
-                onMedicalChange = vm::onSetupMedicalChange,
-                onPaymentChange = vm::onSetupPaymentChange,
-            )
-        }
-        Button(
-            onClick = vm::saveContext,
-            enabled = state.userContext.name.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Save details")
-        }
-        if (state.contextMessage.isNotBlank()) {
-            Text(
-                text = state.contextMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+            OutlinedTextField(
+                value = state.draftReply,
+                onValueChange = vm::onDraftChange,
+                placeholder = { Text("Type a reply...", color = Color(0xFFA0B5A6)) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(50),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Color(0xFF2E8540),
+                    unfocusedBorderColor = Color(0xFFE2ECE4)
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                singleLine = true
             )
-        }
 
-        HorizontalDivider(modifier = Modifier.padding(top = 6.dp))
-        Text(
-            text = "On-device features",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = when {
-                state.modelStatus.startsWith("Gemma unavailable") -> state.modelStatus
-                state.modelStatus == "Gemma loaded" -> "Smart replies are ready"
-                else -> "Smart replies load when first needed"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
+            Spacer(modifier = Modifier.width(8.dp))
 
-@Composable
-private fun BasicProfileFields(
-    context: UserContext,
-    onNameChange: (String) -> Unit,
-    onLanguageChange: (String) -> Unit,
-    onHomeAddressChange: (String) -> Unit,
-) {
-    OutlinedTextField(
-        value = context.name,
-        onValueChange = onNameChange,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("Name") },
-        singleLine = true,
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Reply language", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("English", "Hindi").forEach { language ->
-                FilterChip(
-                    selected = context.preferredLanguage.equals(language, ignoreCase = true),
-                    onClick = { onLanguageChange(language) },
-                    label = { Text(language) },
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2E8540))
+                    .clickable { vm.sendReply() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                    contentDescription = "Send",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
+
+        // In-call Control Bar (Mute, End Call, TTS)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White,
+            shadowElevation = 6.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF0F4F1)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MicOffIcon(size = 22.dp, tint = Color(0xFF55665A))
+                    }
+                    Text(
+                        text = "Mute",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            color = Color(0xFF55665A)
+                        ),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { vm.stopCallPipe() }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE53935)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CallEndRedIcon(size = 28.dp, tint = Color.White)
+                    }
+                    Text(
+                        text = "End call",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            color = Color(0xFFE53935),
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { vm.sendReply() }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF0F4F1)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VolumeUpIcon(size = 22.dp, tint = Color(0xFF55665A))
+                    }
+                    Text(
+                        text = "TTS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            color = Color(0xFF55665A)
+                        ),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
     }
-    OutlinedTextField(
-        value = context.homeAddress,
-        onValueChange = onHomeAddressChange,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text("Home address") },
-        minLines = 2,
-        maxLines = 3,
-    )
 }
 
 @Composable
-private fun AdvancedProfileFields(
-    context: UserContext,
-    onVoiceAddressChange: (String) -> Unit,
-    onPeopleChange: (String) -> Unit,
-    onMedicalChange: (String) -> Unit,
-    onPaymentChange: (String) -> Unit,
+private fun CaptionBubble(
+    speaker: String,
+    text: String,
+    time: String,
+    isCaller: Boolean
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(
-            value = context.voiceFriendlyAddress,
-            onValueChange = onVoiceAddressChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Short address to say aloud") },
-            maxLines = 2,
-        )
-        OutlinedTextField(
-            value = context.importantPeople,
-            onValueChange = onPeopleChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Important people") },
-            minLines = 2,
-            maxLines = 4,
-        )
-        OutlinedTextField(
-            value = context.medicalNotes,
-            onValueChange = onMedicalChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Medical notes") },
-            minLines = 2,
-            maxLines = 4,
-        )
-        OutlinedTextField(
-            value = context.paymentHint,
-            onValueChange = onPaymentChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Safe payment detail") },
-            maxLines = 2,
-        )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCaller) Color.White else Color(0xFFF4F9F5)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = if (isCaller) Color(0xFFEEF3EE) else Color(0xFFD4EAD8),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = speaker,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCaller) Color(0xFF55665A) else Color(0xFF2E8540)
+                    )
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = time,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            color = Color(0xFF90A495)
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Options",
+                        tint = Color(0xFFB0C4B5),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    color = Color(0xFF1E2F23)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimatedAudioWaveform(
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.28f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "phase"
+    )
+
+    Canvas(modifier = modifier.size(280.dp, 100.dp)) {
+        val w = size.width
+        val h = size.height
+        val barCount = 28
+        val barWidth = w / (barCount * 1.6f)
+        val brandGreen = Color(0xFF2E8540)
+
+        for (i in 0 until barCount) {
+            val x = i * (barWidth * 1.6f) + barWidth / 2f
+            val baseHeight = kotlin.math.sin(phase + i * 0.35f) * 0.45f + 0.55f
+            val barHeight = h * 0.85f * baseHeight.coerceIn(0.15f, 1.0f)
+            val yTop = (h - barHeight) / 2f
+
+            drawLine(
+                color = brandGreen,
+                start = Offset(x, yTop),
+                end = Offset(x, yTop + barHeight),
+                strokeWidth = barWidth,
+                cap = StrokeCap.Round
+            )
+        }
     }
 }

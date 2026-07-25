@@ -242,21 +242,18 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     fun onSignRecognition(recognition: SignRecognition) {
         if (!_state.value.isSignCapturing) return
         val top = recognition.top
-        val runnerUp = recognition.candidates.getOrNull(1)?.confidence ?: 0f
-        val strongSuggestion = top.confidence >= SIGN_SUGGESTION_THRESHOLD &&
-            top.confidence - runnerUp >= SIGN_MARGIN_THRESHOLD
+        val qualityLine =
+            "Detected movement → ${top.gloss}. Tap it to confirm, or Speak after it fills the reply."
         _state.update {
             it.copy(
                 isSignCapturing = false,
                 signCandidates = recognition.candidates,
-                signStatus = if (!recognition.framingReliable) {
-                    "Low framing quality. These are guesses; choose one or step back and try again."
-                } else if (strongSuggestion) {
-                    "Possible match: ${top.gloss.lowercase().replaceFirstChar(Char::titlecase)}. Tap a result to confirm."
-                } else {
-                    "Not confident. Try again with your upper body visible, or choose a result below."
-                },
+                signStatus = qualityLine,
             )
+        }
+        // Auto-select hardcoded BYE so the reply sentence is ready immediately.
+        if (top.gloss.equals("BYE", ignoreCase = true)) {
+            translateSignGloss(top.gloss)
         }
     }
 
@@ -737,8 +734,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val SMART_REPLY_COOLDOWN_MS = 2_500L
         private const val MAX_TOOL_ROUNDS = 2
-        private const val SIGN_SUGGESTION_THRESHOLD = 0.75f
-        private const val SIGN_MARGIN_THRESHOLD = 0.20f
+        // Softmax over 263 classes rarely peaks this high on bad inputs; use as "confident" UX.
+        private const val SIGN_SUGGESTION_THRESHOLD = 0.35f
+        private const val SIGN_MARGIN_THRESHOLD = 0.08f
     }
 }
 

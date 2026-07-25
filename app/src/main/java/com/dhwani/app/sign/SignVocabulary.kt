@@ -15,6 +15,7 @@ object SignVocabulary {
         SignPhrase("NO", "No, that will not work.", "नहीं, यह मेरे लिए ठीक नहीं है।"),
         SignPhrase("PLEASE REPEAT", "Please repeat that.", "कृपया फिर से कहिए।"),
         SignPhrase("THANK YOU", "Thank you.", "धन्यवाद।"),
+        SignPhrase("BYE", "Bye, thank you for your time.", "अलविदा, आपके समय के लिए धन्यवाद।"),
         SignPhrase("WAIT", "Please wait a moment.", "कृपया एक पल रुकिए।"),
         SignPhrase("APPOINTMENT", "I am calling about my appointment.", "मैं अपनी अपॉइंटमेंट के बारे में बात कर रहा हूं।"),
         SignPhrase("RESCHEDULE", "I need to reschedule my appointment.", "मुझे अपनी अपॉइंटमेंट बदलनी है।"),

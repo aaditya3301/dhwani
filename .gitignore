@@ -16,14 +16,32 @@ local.properties
 # Python caches
 __pycache__/
 *.py[cod]
+*.egg-info/
+.venv/
+venv/
 
-# Local model assets
+# Local optional model assets (not required for basic install)
 app/src/main/assets/models/*.task
+app/src/main/assets/models/gemma*
 app/src/main/assets/vosk-en/**
 app/src/main/assets/vosk-hi/**
 !app/src/main/assets/models/.gitkeep
 !app/src/main/assets/vosk-en/.gitkeep
 !app/src/main/assets/vosk-hi/.gitkeep
+
+# Sign debug / Mac experiment artifacts (not needed to run the app)
+**/sign_dumps/
+*.onnx.bak*
+*.onnx.bak_*
+tools/sign/mac_sign_demo.py
+tools/sign/parity_harness.py
+tools/sign/requirements-mac.txt
+tools/sign/DIAGNOSE.md
+tools/sign/watch_and_pull.sh
+app/src/main/java/com/dhwani/app/sign/SignCaptureDebug.kt
+
+# Local notes (keep on disk, do not commit)
+context.md
 
 # OS files
 .DS_Store

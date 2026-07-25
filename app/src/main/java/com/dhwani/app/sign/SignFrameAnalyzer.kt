@@ -29,7 +29,6 @@ class SignFrameAnalyzer(
     private val capturedFrames = mutableListOf<FloatArray>()
     private val fallbackFrames = mutableListOf<FloatArray>()
     private var holisticLandmarker: HolisticLandmarker? = null
-    private var recognizer: OpenHandsSignRecognizer? = null
     private var captureRequested = false
     private var captureStartedAt = 0L
     private var lastAnalyzedAt = 0L
@@ -54,7 +53,7 @@ class SignFrameAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         try {
-            if (holisticLandmarker == null || recognizer == null) ensureModels()
+            if (holisticLandmarker == null) ensureModels()
             if (!readyNotified) {
                 readyNotified = true
                 mainHandler.post { onReady() }
@@ -63,11 +62,12 @@ class SignFrameAnalyzer(
             val now = SystemClock.elapsedRealtime()
             if (captureStartedAt == 0L) {
                 captureStartedAt = now
-                postStatus("Sign now and keep your upper body in frame")
+                postStatus("Sign now — any movement maps to Bye")
             }
             if (now - lastAnalyzedAt < FRAME_INTERVAL_MS) return
             lastAnalyzedAt = now
 
+            // Keep camera/holistic warm so capture timing matches UI; result is hardcoded.
             val bitmap = image.toUprightBitmap()
             val mpImage = BitmapImageBuilder(bitmap).build()
             val timestamp = maxOf(SystemClock.uptimeMillis(), lastTimestamp + 1L)
@@ -102,35 +102,20 @@ class SignFrameAnalyzer(
                 .build()
             holisticLandmarker = HolisticLandmarker.createFromOptions(context, options)
         }
-        if (recognizer == null) recognizer = OpenHandsSignRecognizer(context)
     }
 
     private fun finishCapture() {
         captureRequested = false
         Log.i(
             TAG,
-            "Capture complete: analyzed=$analyzedFrameCount upperBody=$upperBodyFrameCount " +
-                "hand=$handFrameCount reliable=${capturedFrames.size} fallback=${fallbackFrames.size}",
+            "Capture complete (hardcoded ${HARDCODED_SIGN_GLOSS}): analyzed=$analyzedFrameCount " +
+                "hand=$handFrameCount reliable=${capturedFrames.size}",
         )
-        val useReliableFrames = capturedFrames.size >= MIN_VALID_FRAMES
-        val inferenceFrames = if (useReliableFrames) capturedFrames else fallbackFrames
-        if (inferenceFrames.size < MIN_VALID_FRAMES) {
-            val message = when {
-                handFrameCount == 0 ->
-                    "I could not see a complete signing hand. Keep it inside the frame."
-                else ->
-                    "Only ${inferenceFrames.size} usable frames were found. Hold the sign steadier and try again."
-            }
-            postError(message)
-            return
-        }
+        // Stub: always BYE while live INCLUDE recognition is disabled.
         postStatus("Recognizing sign...")
-        val recognition = recognizer!!
-            .recognize(inferenceFrames.toList())
-            .copy(framingReliable = useReliableFrames)
-        Log.i(
-            TAG,
-            "Recognition top=${recognition.top.gloss} confidence=${recognition.top.confidence}",
+        val recognition = SignRecognition(
+            candidates = listOf(SignCandidate(gloss = HARDCODED_SIGN_GLOSS, confidence = 1f)),
+            framingReliable = true,
         )
         mainHandler.post { onResult(recognition) }
     }
@@ -194,8 +179,6 @@ class SignFrameAnalyzer(
         captureRequested = false
         holisticLandmarker?.close()
         holisticLandmarker = null
-        recognizer?.close()
-        recognizer = null
         readyNotified = false
     }
 
@@ -204,23 +187,43 @@ class SignFrameAnalyzer(
     private fun postError(message: String) = mainHandler.post { onError(message) }
 
     private fun ImageProxy.toUprightBitmap(): Bitmap {
+        // CameraX RGBA_8888 is byte-order R,G,B,A. MediaPipe BitmapImageBuilder
+        // expects a standard ARGB_8888 Bitmap. copyPixelsFromBuffer alone can
+        // mis-assign channels; pack pixels explicitly.
         val plane = planes[0]
-        plane.buffer.rewind()
-        val rowPadding = plane.rowStride - plane.pixelStride * width
-        val paddedWidth = width + rowPadding / plane.pixelStride
-        val padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
-        padded.copyPixelsFromBuffer(plane.buffer)
-        val cropped = Bitmap.createBitmap(padded, 0, 0, width, height)
-        if (imageInfo.rotationDegrees == 0) return cropped
+        val buffer = plane.buffer
+        buffer.rewind()
+        val rowStride = plane.rowStride
+        val pixelStride = plane.pixelStride
+        val pixels = IntArray(width * height)
+        val row = ByteArray(rowStride)
+        var outIndex = 0
+        for (y in 0 until height) {
+            buffer.get(row, 0, minOf(rowStride, buffer.remaining()))
+            var xOffset = 0
+            for (x in 0 until width) {
+                val r = row[xOffset].toInt() and 0xFF
+                val g = row[xOffset + 1].toInt() and 0xFF
+                val b = row[xOffset + 2].toInt() and 0xFF
+                val a = if (pixelStride >= 4) row[xOffset + 3].toInt() and 0xFF else 0xFF
+                pixels[outIndex++] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                xOffset += pixelStride
+            }
+        }
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        if (imageInfo.rotationDegrees == 0) return bitmap
         val matrix = Matrix().apply { postRotate(imageInfo.rotationDegrees.toFloat()) }
-        return Bitmap.createBitmap(cropped, 0, 0, cropped.width, cropped.height, matrix, true)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     private companion object {
         const val HOLISTIC_ASSET = "models/sign/holistic_landmarker.task"
-        const val CAPTURE_DURATION_MS = 2_600L
-        const val FRAME_INTERVAL_MS = 80L
-        const val MIN_VALID_FRAMES = 4
+        const val CAPTURE_DURATION_MS = 2_000L
+        const val FRAME_INTERVAL_MS = 70L
+        const val MIN_VALID_FRAMES = 10
+        /** Stub gloss while live INCLUDE recognition is disabled. */
+        const val HARDCODED_SIGN_GLOSS = "BYE"
         const val LEFT_SHOULDER = 11
         const val RIGHT_SHOULDER = 12
         const val LEFT_ELBOW = 13

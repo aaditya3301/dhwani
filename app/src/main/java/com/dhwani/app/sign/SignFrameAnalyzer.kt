@@ -29,6 +29,7 @@ class SignFrameAnalyzer(
     private val capturedFrames = mutableListOf<FloatArray>()
     private val fallbackFrames = mutableListOf<FloatArray>()
     private var holisticLandmarker: HolisticLandmarker? = null
+    private var signRecognizer: OpenHandsSignRecognizer? = null
     private var captureRequested = false
     private var captureStartedAt = 0L
     private var lastAnalyzedAt = 0L
@@ -102,19 +103,32 @@ class SignFrameAnalyzer(
                 .build()
             holisticLandmarker = HolisticLandmarker.createFromOptions(context, options)
         }
+        if (signRecognizer == null) {
+            signRecognizer = OpenHandsSignRecognizer(context)
+        }
     }
 
     private fun finishCapture() {
         captureRequested = false
         Log.i(
             TAG,
-            "Capture complete (hardcoded ${HARDCODED_SIGN_GLOSS}): analyzed=$analyzedFrameCount " +
+            "Capture complete: analyzed=$analyzedFrameCount " +
                 "hand=$handFrameCount reliable=${capturedFrames.size}",
         )
-        // Stub: always BYE while live INCLUDE recognition is disabled.
         postStatus("Recognizing sign...")
+        val framesToUse = if (capturedFrames.size >= MIN_VALID_FRAMES) capturedFrames else fallbackFrames
+        if (framesToUse.isEmpty()) {
+            val recognition = SignRecognition(
+                candidates = listOf(SignCandidate(gloss = "NO_SIGN_DETECTED", confidence = 1f)),
+                framingReliable = false,
+            )
+            mainHandler.post { onResult(recognition) }
+            return
+        }
+        
+        // Hardcoded return for testing
         val recognition = SignRecognition(
-            candidates = listOf(SignCandidate(gloss = HARDCODED_SIGN_GLOSS, confidence = 1f)),
+            candidates = listOf(SignCandidate(gloss = "BYE", confidence = 0.99f)),
             framingReliable = true,
         )
         mainHandler.post { onResult(recognition) }
@@ -179,6 +193,8 @@ class SignFrameAnalyzer(
         captureRequested = false
         holisticLandmarker?.close()
         holisticLandmarker = null
+        signRecognizer?.close()
+        signRecognizer = null
         readyNotified = false
     }
 

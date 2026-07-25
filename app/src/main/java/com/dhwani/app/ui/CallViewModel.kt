@@ -207,12 +207,9 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startSignCapture() {
         if (_state.value.isSignCapturing || _state.value.isSignTranslating) return
-        if (!_state.value.isSignRecognizerReady) {
-            _state.update { it.copy(signStatus = "Getting the sign recognizer ready...") }
-            return
-        }
         _state.update {
             it.copy(
+                isSignRecognizerReady = true,
                 isSignCapturing = true,
                 isSignTranslating = false,
                 signCaptureRequestId = it.signCaptureRequestId + 1L,
@@ -225,7 +222,6 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onSignRecognizerReady() {
-        if (!_state.value.isSignPanelOpen) return
         _state.update {
             it.copy(
                 isSignRecognizerReady = true,

@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -210,6 +211,7 @@ fun SignInterpreterScreen(
 
                                             val imageAnalysis = ImageAnalysis.Builder()
                                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                                                 .build()
                                                 .also {
                                                     it.setAnalyzer(
@@ -273,9 +275,11 @@ fun SignInterpreterScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = when {
-                                        state.isSignCapturing -> "Capturing sign gesture..."
+                                        state.isSignCapturing && state.signStatus.isNotBlank() -> state.signStatus
+                                        state.isSignCapturing -> "Perform one complete sign"
                                         state.signStatus.isNotBlank() -> state.signStatus
-                                        else -> "Keep body & hands visible in frame"
+                                        !state.isSignRecognizerReady -> "Loading sign models..."
+                                        else -> "Ready to recognize"
                                     },
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         color = Color.White,
@@ -283,6 +287,44 @@ fun SignInterpreterScreen(
                                         fontSize = 12.sp
                                     )
                                 )
+                            }
+                        }
+
+                        if (state.isSignCapturing) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0x99000000)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(54.dp),
+                                        color = Color.White,
+                                        strokeWidth = 5.dp,
+                                    )
+                                    Text(
+                                        text = if (state.signStatus.startsWith("Recognizing")) {
+                                            "Finding the closest ISL sign..."
+                                        } else {
+                                            "Recording your sign..."
+                                        },
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                    )
+                                    Text(
+                                        text = state.signStatus.ifBlank { "Move naturally and finish the sign" },
+                                        color = Color(0xFFDCEFE1),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
                         }
                     }
@@ -295,8 +337,13 @@ fun SignInterpreterScreen(
                 ) {
                     Button(
                         onClick = {
-                            analyzer?.startCapture()
-                            vm.startSignCapture()
+                            val activeAnalyzer = analyzer
+                            if (activeAnalyzer == null || !state.isSignRecognizerReady) {
+                                vm.onSignCaptureError("The sign camera is still loading. Try again in a moment.")
+                            } else {
+                                vm.startSignCapture()
+                                activeAnalyzer.startCapture()
+                            }
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -306,12 +353,18 @@ fun SignInterpreterScreen(
                             containerColor = Color(0xFF2E8540),
                             contentColor = Color.White
                         ),
-                        enabled = !state.isSignCapturing
+                        enabled = analyzer != null &&
+                            state.isSignRecognizerReady &&
+                            !state.isSignCapturing
                     ) {
                         CameraVideoIcon(size = 20.dp, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (state.isSignCapturing) "Recording Sign..." else "Interpret Sign",
+                            text = when {
+                                state.isSignCapturing -> "Recording..."
+                                !state.isSignRecognizerReady -> "Loading sign models..."
+                                else -> "Recognize sign"
+                            },
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
@@ -386,7 +439,7 @@ fun SignInterpreterScreen(
                                     color = Color(0xFFE4F3E8)
                                 ) {
                                     Text(
-                                        text = "Gloss: ${state.selectedSignGloss.ifBlank { "BYE" }}",
+                                        text = "Sign: ${state.selectedSignGloss}",
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontSize = 11.sp,
@@ -406,7 +459,7 @@ fun SignInterpreterScreen(
                             }
                         } else {
                             Text(
-                                text = "Point camera at sign language user and tap 'Interpret Sign' to recognize gestures.",
+                                text = "Tap Recognize, then perform one complete sign with your upper body visible.",
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontSize = 14.sp,
                                     color = Color(0xFF708A77)
@@ -418,7 +471,7 @@ fun SignInterpreterScreen(
 
                 // Preset ISL Sign Phrases Section
                 Text(
-                    text = "Quick ISL Vocabulary",
+                    text = "Supported ISL signs",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,

@@ -50,6 +50,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     private var briefingJob: Job? = null
     private var summaryJob: Job? = null
     private var speechJob: Job? = null
+    private var signCaptureTimeoutJob: Job? = null
     private var lastSuggestionAtMs: Long = 0
     private var lastSuggestionUtterance: String = ""
     private var callGeneration: Long = 0L
@@ -207,17 +208,34 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startSignCapture() {
         if (_state.value.isSignCapturing || _state.value.isSignTranslating) return
+        if (!_state.value.isSignRecognizerReady) {
+            _state.update { it.copy(signStatus = "The sign camera is still loading") }
+            return
+        }
         _state.update {
             it.copy(
-                isSignRecognizerReady = true,
                 isSignCapturing = true,
                 isSignTranslating = false,
                 signCaptureRequestId = it.signCaptureRequestId + 1L,
-                signStatus = "Starting capture...",
+                signStatus = "Starting camera - get ready",
                 signCandidates = emptyList(),
                 selectedSignGloss = "",
                 signSentence = "",
             )
+        }
+        signCaptureTimeoutJob?.cancel()
+        signCaptureTimeoutJob = viewModelScope.launch {
+            delay(SIGN_CAPTURE_TIMEOUT_MS)
+            _state.update {
+                if (!it.isSignCapturing) {
+                    it
+                } else {
+                    it.copy(
+                        isSignCapturing = false,
+                        signStatus = "Recognition timed out. Check the camera view and try again.",
+                    )
+                }
+            }
         }
     }
 
@@ -237,23 +255,49 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onSignRecognition(recognition: SignRecognition) {
         if (!_state.value.isSignCapturing) return
+        signCaptureTimeoutJob?.cancel()
         val top = recognition.top
-        val qualityLine =
-            "Detected movement → ${top.gloss}. Tap it to confirm, or Speak after it fills the reply."
+        when (top.gloss) {
+            "NO_SIGN_DETECTED" -> {
+                _state.update {
+                    it.copy(
+                        isSignCapturing = false,
+                        signCandidates = emptyList(),
+                        selectedSignGloss = "",
+                        signSentence = "",
+                        signStatus = "No complete sign was captured. Keep your face, shoulders, and hands in frame, then try again.",
+                    )
+                }
+                return
+            }
+
+            "UNKNOWN_SIGN" -> {
+                _state.update {
+                    it.copy(
+                        isSignCapturing = false,
+                        signCandidates = emptyList(),
+                        selectedSignGloss = "",
+                        signSentence = "",
+                        signStatus = "That sign is not a confident match. Try HELLO, THANK YOU, DOCTOR, or MEDICINE.",
+                    )
+                }
+                return
+            }
+        }
+
+        val confidencePercent = (top.confidence * 100).toInt().coerceIn(0, 100)
         _state.update {
             it.copy(
                 isSignCapturing = false,
                 signCandidates = recognition.candidates,
-                signStatus = qualityLine,
+                signStatus = "Detected ${top.gloss.lowercase()} ($confidencePercent%)",
             )
         }
-        // Auto-select hardcoded BYE so the reply sentence is ready immediately.
-        if (top.gloss.equals("BYE", ignoreCase = true)) {
-            translateSignGloss(top.gloss)
-        }
+        translateSignGloss(top.gloss)
     }
 
     fun onSignCaptureError(message: String) {
+        signCaptureTimeoutJob?.cancel()
         _state.update {
             it.copy(
                 isSignCapturing = false,
@@ -443,6 +487,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        signCaptureTimeoutJob?.cancel()
         stopCallPipe(saveSummary = false)
         tts.close()
         super.onCleared()
@@ -730,9 +775,7 @@ class CallViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val SMART_REPLY_COOLDOWN_MS = 2_500L
         private const val MAX_TOOL_ROUNDS = 2
-        // Softmax over 263 classes rarely peaks this high on bad inputs; use as "confident" UX.
-        private const val SIGN_SUGGESTION_THRESHOLD = 0.35f
-        private const val SIGN_MARGIN_THRESHOLD = 0.08f
+        private const val SIGN_CAPTURE_TIMEOUT_MS = 15_000L
     }
 }
 

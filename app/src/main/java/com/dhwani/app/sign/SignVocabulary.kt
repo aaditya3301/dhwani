@@ -10,22 +10,15 @@ data class SignPhrase(
 
 object SignVocabulary {
     val demoPhrases: List<SignPhrase> = listOf(
-        SignPhrase("HELLO", "Hello, I am here.", "नमस्ते, मैं लाइन पर हूं।"),
-        SignPhrase("YES", "Yes, that works for me.", "हां, यह मेरे लिए ठीक है।"),
-        SignPhrase("NO", "No, that will not work.", "नहीं, यह मेरे लिए ठीक नहीं है।"),
-        SignPhrase("PLEASE REPEAT", "Please repeat that.", "कृपया फिर से कहिए।"),
+        SignPhrase("HELLO", "Hello.", "नमस्ते।"),
+        SignPhrase("HOW ARE YOU", "How are you?", "आप कैसे हैं?"),
         SignPhrase("THANK YOU", "Thank you.", "धन्यवाद।"),
-        SignPhrase("BYE", "Bye, thank you for your time.", "अलविदा, आपके समय के लिए धन्यवाद।"),
-        SignPhrase("WAIT", "Please wait a moment.", "कृपया एक पल रुकिए।"),
-        SignPhrase("APPOINTMENT", "I am calling about my appointment.", "मैं अपनी अपॉइंटमेंट के बारे में बात कर रहा हूं।"),
-        SignPhrase("RESCHEDULE", "I need to reschedule my appointment.", "मुझे अपनी अपॉइंटमेंट बदलनी है।"),
+        SignPhrase("GOOD MORNING", "Good morning.", "सुप्रभात।"),
         SignPhrase("DOCTOR", "I need to speak to the doctor.", "मुझे डॉक्टर से बात करनी है।"),
-        SignPhrase("ADDRESS", "I can share my address.", "मैं अपना पता बता सकता हूं।"),
-        SignPhrase("MY HOME", "My home address is saved in Dhwani.", "मेरा घर का पता ध्वनि में सेव है।"),
-        SignPhrase("PAYMENT", "I can share my UPI ID.", "मैं अपना UPI ID बता सकता हूं।"),
+        SignPhrase("HOSPITAL", "I need to go to the hospital.", "मुझे अस्पताल जाना है।"),
         SignPhrase("MEDICINE", "I am calling about my medicines.", "मैं अपनी दवाइयों के बारे में बात कर रहा हूं।"),
-        SignPhrase("CONFIRM", "Please confirm this.", "कृपया इसकी पुष्टि कर दीजिए।"),
-        SignPhrase("CALL BACK", "I will call back soon.", "मैं थोड़ी देर में वापस कॉल करूंगा।"),
+        SignPhrase("TELEPHONE", "Please call me.", "कृपया मुझे फोन कीजिए।"),
+        SignPhrase("MONEY", "I am calling about the money.", "मैं पैसों के बारे में बात कर रहा हूं।"),
     )
 
     fun find(gloss: String): SignPhrase? {
@@ -35,7 +28,10 @@ object SignVocabulary {
     fun fallbackSentence(gloss: String, languageLabel: String, context: UserContext): String {
         val cleanGloss = gloss.trim().replace('_', ' ')
         val normalizedGloss = gloss.trim().uppercase().replace('_', ' ')
-        if (normalizedGloss == "YOU(PLURAL)") {
+        QUICK_GESTURE_SENTENCES[normalizedGloss]?.let { (english, hindi) ->
+            return if (languageLabel.equals("Hindi", ignoreCase = true)) hindi else english
+        }
+        if (normalizedGloss == "YOU(PLURAL)" || normalizedGloss == "YOU (PLURAL)") {
             return if (languageLabel.equals("Hindi", ignoreCase = true)) "आप सब।" else "All of you."
         }
         if (normalizedGloss == "THANKYOU") {
@@ -54,6 +50,16 @@ object SignVocabulary {
         }
         return cleanGloss.lowercase().replaceFirstChar { it.titlecase() }
     }
+
+    private val QUICK_GESTURE_SENTENCES = mapOf(
+        "THUMBS UP" to ("Yes." to "हां।"),
+        "THUMBS DOWN" to ("No." to "नहीं।"),
+        "OPEN PALM" to ("Open palm." to "खुली हथेली।"),
+        "CLOSED FIST" to ("Stop." to "रुकिए।"),
+        "POINTING UP" to ("One." to "एक।"),
+        "VICTORY" to ("Victory." to "जीत।"),
+        "I LOVE YOU" to ("I love you." to "मैं आपसे प्यार करता हूं।"),
+    )
 }
 
 object SignInterpreter {

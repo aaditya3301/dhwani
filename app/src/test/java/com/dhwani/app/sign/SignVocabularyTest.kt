@@ -11,9 +11,10 @@ class SignVocabularyTest {
         val glosses = SignVocabulary.demoPhrases.map { it.gloss }
 
         assertTrue("HELLO" in glosses)
-        assertTrue("RESCHEDULE" in glosses)
-        assertTrue("APPOINTMENT" in glosses)
-        assertTrue("PLEASE REPEAT" in glosses)
+        assertTrue("HOW ARE YOU" in glosses)
+        assertTrue("DOCTOR" in glosses)
+        assertTrue("MEDICINE" in glosses)
+        assertTrue(glosses.all { it in SignRecognitionPolicy.supportedIncludeGlosses })
     }
 
     @Test
@@ -52,7 +53,7 @@ class SignVocabularyTest {
     @Test
     fun pluralYouLabelKeepsLiteralMeaning() {
         val sentence = SignVocabulary.fallbackSentence(
-            gloss = "YOU(PLURAL)",
+            gloss = "YOU (PLURAL)",
             languageLabel = "English",
             context = UserContext(),
         )

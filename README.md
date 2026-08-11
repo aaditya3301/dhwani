@@ -67,7 +67,21 @@ the device.
 
 ## Models
 
-Sign recognition uses the Apache-2.0 licensed
-[AI4Bharat OpenHands](https://github.com/AI4Bharat/OpenHands) INCLUDE checkpoint
-with Google MediaPipe Holistic landmarks. It recognizes isolated signs, not
-continuous sign-language sentences.
+Sign recognition uses a hybrid offline pipeline. Google's MediaPipe Gesture
+Recognizer handles seven stable single-hand gestures. ISL recognition uses the
+official small Transformer checkpoint from the MIT-licensed
+[AI4Bharat INCLUDE repository](https://github.com/AI4Bharat/INCLUDE), converted
+to ONNX without changing its weights. It reads up to 169 frames containing the
+first 25 pose landmarks and all 21 landmarks from each hand.
+
+The INCLUDE model was trained as a 263-class isolated-word classifier. Dhwani
+only accepts a focused subset useful during calls, including greetings,
+pronouns, health terms, phone terms, money, and time. A result must agree across
+three temporal views and pass confidence, framing, and class-separation checks.
+Anything else is shown as unknown instead of being forced into labels such as
+`DOG`, `ELECTION`, or `TRANSPORTATION`.
+
+Tap **Recognize sign**, keep your face, shoulders, elbows, and hands visible,
+then perform one complete sign once. The app recognizes isolated signs, not
+continuous sign-language sentences. `FLOWER` is not one of the INCLUDE classes
+and is intentionally returned as unknown.
